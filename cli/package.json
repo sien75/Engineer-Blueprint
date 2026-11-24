@@ -1,0 +1,12 @@
+{
+  "name": "engineer-blueprint-cli",
+  "version": "0.1.0",
+  "description": "Zero-dependency Bun CLI for Engineer Blueprint declarative SQLite schemas and natural-language flows",
+  "type": "module",
+  "bin": {
+    "bp": "./bin/bp.js"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}
