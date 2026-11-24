@@ -33,4 +33,4 @@ Use when creating or updating a `.html` blueprint and verifying it in `dev` mode
    - **Silent UI verification**: Prefer `ego-lite` (`ego-browser`), an agent built-in browser, or `browser-use` (or agree with the user on which debugging browser tool to use) to open `http://127.0.0.1:7500/bp-dev/<slug>` and inspect rendering, console errors, and interactions without popping up foreground windows.
    - **Trigger flows**: `bp emit <slug> <event> '<json>' --dev` to trigger matching `on` flows and observe live `bp.watch` / `bp.on` updates.
    - **Inspect or mutate SQLite**: `bp sql <slug> "<statement>" --dev` to check stored rows or test reactive `bp.watch` updates.
-   - **Inspect logs**: `bp logs <slug> --dev` to review `qwen3.5:9b` routing decisions, step outputs, and errors (or run `bp run <file.html> <event> '<json>' --dev` for an offline single run).
+   - **Inspect logs**: `bp logs <slug> --dev` to review Jev routing decisions, step outputs, and errors (or run `bp run <file.html> <event> '<json>' --dev` for an offline single run).

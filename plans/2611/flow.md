@@ -1,6 +1,6 @@
 # Engineer Blueprint Flow 编排与动作节点设计
 
-> **定位说明**：在 Engineer Blueprint 中，Flow 是面向单个 `.html` 蓝图的轻量级后端编排能力。蓝图作者使用自然语言编写 `<script type="blueprint/flow">` 流程规则，配合 `blueprint/js`、`blueprint/sh`、`blueprint/sql`、`blueprint/emit`、`blueprint/ai` 五类可声明动作节点，通过本地 Ollama `qwen3.5:9b` 决策路由循环逐步推进执行，并由 `bp run` 统一入口自动同步表结构后运行。
+> **定位说明**：在 Engineer Blueprint 中，Flow 是面向单个 `.html` 蓝图的轻量级后端编排能力。蓝图作者使用自然语言编写 `<script type="blueprint/flow">` 流程规则，配合 `blueprint/js`、`blueprint/sh`、`blueprint/sql`、`blueprint/emit`、`blueprint/ai` 五类可声明动作节点，通过云端 TypeSafe Jev（`jev-1.14`）决策路由循环逐步推进执行，并由 `bp run` 统一入口自动同步表结构后运行。
 
 ---
 
@@ -48,9 +48,9 @@
 
 - **异常捕获与容错路由**：任意动作节点抛出异常时，运行时不会直接中断流程，而是捕获错误并记录 `{ step, node, ok: false, output: null, error: err.message }` 写入 `ctx.history`、`ctx.last` 与 `ctx.steps[nodeId]`，由下一轮决策路由决定转向兜底错误处理节点或 `done`。
 
-### 2. `qwen3.5:9b` 决策路由与 500 字符截断视图
+### 2. Jev 决策路由与 500 字符截断视图
 
-- **结构化约束输出**：默认调用 Ollama `POST ${BP_OLLAMA_URL || "http://127.0.0.1:11434"}/api/chat`（默认模型 `BP_ROUTER_MODEL || "qwen3.5:9b"`），固定 `stream: false`、`think: false`，并通过 JSON Schema `format` 将输出严格约束为 `{"next": "<choice>"}`，其中可选枚举为 `[...nodeIds, "done"]`。
+- **结构化决策协议（Jev System One）**：默认调用 `POST ${BP_JEV_URL || "https://api.typesafe.ai/v1"}/systemone`（默认模型 `BP_JEV_MODEL || "jev-1.14"`，鉴权读取 `BP_JEV_API_KEY`、`JEV_API_KEY` 或 `--jev-key`），请求体携带 `model`、`state` 与 `questions.next`（`type: "choice"`，`criteria` 为 `[...nodeIds, "done"]` 及其描述），从 `answers.next.choice` 读取下一步节点。
 - **决策提示视图截断（最大 500 字符）**：传给决策模型的提示词包含四部分：(1) Flow 自然语言指令；(2) 触发事件类型与截断至最多 500 字符的 JSON 序列化 `data`；(3) 按步编号的执行进度摘要（`#1 <node> [ok]: <截断至500字符>` 或 `#1 <node> [error]: <截断至500字符>`，首步为 `(none yet)`）；(4) 各候选节点 `id`（含 `desc`）及 `done`。**决策视图截断仅作用于模型提示词，下游动作节点依然接收完整未截断的 `ctx`。**
 - **循环上限保护（`maxSteps`）**：默认最多执行 `16` 轮决策（可通过 `--max-steps <n>` 调整）。若在上限内仍未选择 `"done"`，立即终止并抛出包含已执行轨迹（`#1 ..., #2 ...`）的明确错误。
 
@@ -60,5 +60,5 @@
 
 - **访问边界**：`blueprint/js`、`blueprint/sh` 等代码动作节点与 `plans/2611/sql.md` 约定保持一致——**严禁在脚本中直接打开 `.sqlite` 文件**，所有数据库读写必须经由 `<script type="blueprint/sql" id="...">` 节点或 `bp sql` 完成。
 - **CLI 入口**：
-  - `bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-steps <n>] [--model <name>] [--ollama <url>]`
-  - `bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--model <name>] [--ollama <url>]`
+  - `bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]`
+  - `bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]`

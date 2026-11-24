@@ -38,7 +38,7 @@ function getUsageText() {
   return `Engineer Blueprint CLI (bp)
 
 Usage:
-  bp up [dir] [--port <n>] [--bind <host>] [--data <dir>] [--foreground] [--model <name>] [--ollama <url>] [--json]
+  bp up [dir] [--port <n>] [--bind <host>] [--data <dir>] [--foreground] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>] [--json]
   bp down [--data <dir>] [--json]
   bp reload [slug] [--dev] [--data <dir>] [--json]
   bp emit <slug> <event> [json-data] [--dev] [--data <dir>] [--json]
@@ -48,22 +48,24 @@ Usage:
   bp run <file.html> --init [options]
 
 Options:
-  --dev              Target dev mode instead of prod
-  --data <dir>       Override data directory (default: $BP_DATA or ~/.engineer-blueprint/data)
-  --json             Output structured JSON
-  --port <n>         Daemon listen port (default: 7500, bp up only)
-  --bind <host>      Daemon bind host (default: 127.0.0.1, bp up only)
-  --foreground       Run daemon in foreground instead of detaching (bp up only)
-  --limit <n>        Max log lines to return (bp logs only)
-  --init             Execute <script type="blueprint/flow" init> (bp run only)
-  --max-steps <n>    Max flow decision turns before aborting (default: 16, bp run only)
-  --model <name>     Override Ollama router model (default: $BP_ROUTER_MODEL or qwen3.5:9b)
-  --ollama <url>     Override Ollama base URL (default: $BP_OLLAMA_URL or http://127.0.0.1:11434)
-  -h, --help         Show help
-  -v, --version      Show version
+  --dev                 Target dev mode instead of prod
+  --data <dir>          Override data directory (default: $BP_DATA or ~/.engineer-blueprint/data)
+  --json                Output structured JSON
+  --port <n>            Daemon listen port (default: 7500, bp up only)
+  --bind <host>         Daemon bind host (default: 127.0.0.1, bp up only)
+  --foreground          Run daemon in foreground instead of detaching (bp up only)
+  --limit <n>           Max log lines to return (bp logs only)
+  --init                Execute <script type="blueprint/flow" init> (bp run only)
+  --max-steps <n>       Max flow decision turns before aborting (default: 16, bp run only)
+  --jev-url <url>       Override Jev API base URL (default: $BP_JEV_URL or https://api.typesafe.ai/v1)
+  --jev-model <name>    Override Jev model name (default: $BP_JEV_MODEL or jev-1.14)
+  --jev-key <key>       Override Jev API key (default: $BP_JEV_API_KEY or $JEV_API_KEY)
+  -h, --help            Show help
+  -v, --version         Show version
 
 Note:
-  bp up [dir] defaults to saved config.json dir, $BP_DIR, or ~/.engineer-blueprint/blueprints.`;
+  bp up [dir] defaults to saved config.json dir, $BP_DIR, or ~/.engineer-blueprint/blueprints.
+  Set BP_JEV_API_KEY (or JEV_API_KEY / --jev-key) to authenticate cloud Jev requests.`;
 }
 
 function readFlagValue(argv, index, flagName, label) {
@@ -108,8 +110,9 @@ function parseCliArgs(argv) {
   let port;
   let bind;
   let limit;
-  let model;
-  let ollamaUrl;
+  let jevModel;
+  let jevUrl;
+  let jevApiKey;
   let help = false;
   let version = false;
 
@@ -162,20 +165,27 @@ function parseCliArgs(argv) {
     } else if (arg.startsWith("--max-steps=")) {
       const val = arg.slice("--max-steps=".length);
       maxSteps = parsePositiveIntOption(val, "--max-steps=");
-    } else if (arg === "--model") {
-      model = readFlagValue(argv, i, "--model", "a model name");
+    } else if (arg === "--jev-model") {
+      jevModel = readFlagValue(argv, i, "--jev-model", "a Jev model name");
       i++;
-    } else if (arg.startsWith("--model=")) {
-      const val = arg.slice("--model=".length);
-      if (!val.trim()) throw new Error('Option "--model=" requires a non-empty model name.');
-      model = val;
-    } else if (arg === "--ollama") {
-      ollamaUrl = readFlagValue(argv, i, "--ollama", "an Ollama base URL");
+    } else if (arg.startsWith("--jev-model=")) {
+      const val = arg.slice("--jev-model=".length);
+      if (!val.trim()) throw new Error('Option "--jev-model=" requires a non-empty model name.');
+      jevModel = val;
+    } else if (arg === "--jev-url") {
+      jevUrl = readFlagValue(argv, i, "--jev-url", "a Jev base URL");
       i++;
-    } else if (arg.startsWith("--ollama=")) {
-      const val = arg.slice("--ollama=".length);
-      if (!val.trim()) throw new Error('Option "--ollama=" requires a non-empty URL.');
-      ollamaUrl = val;
+    } else if (arg.startsWith("--jev-url=")) {
+      const val = arg.slice("--jev-url=".length);
+      if (!val.trim()) throw new Error('Option "--jev-url=" requires a non-empty URL.');
+      jevUrl = val;
+    } else if (arg === "--jev-key") {
+      jevApiKey = readFlagValue(argv, i, "--jev-key", "a Jev API key");
+      i++;
+    } else if (arg.startsWith("--jev-key=")) {
+      const val = arg.slice("--jev-key=".length);
+      if (!val.trim()) throw new Error('Option "--jev-key=" requires a non-empty API key.');
+      jevApiKey = val;
     } else if (arg.startsWith("-")) {
       throw new Error(`Unknown option: ${arg}`);
     } else {
@@ -198,8 +208,9 @@ function parseCliArgs(argv) {
     port,
     bind,
     limit,
-    model,
-    ollamaUrl,
+    jevModel,
+    jevUrl,
+    jevApiKey,
     help,
     version,
   };
@@ -334,10 +345,10 @@ function printLogsResult(res, asJson) {
   }
 }
 
-async function handleUp({ positionals, dataDir, json, foreground, port, bind, model, ollamaUrl }) {
+async function handleUp({ positionals, dataDir, json, foreground, port, bind, jevModel, jevUrl, jevApiKey }) {
   if (positionals.length > 2) {
     throw new Error(
-      "Usage: bp up [dir] [--port <n>] [--bind <host>] [--data <dir>] [--foreground] [--model <name>] [--ollama <url>] [--json]"
+      "Usage: bp up [dir] [--port <n>] [--bind <host>] [--data <dir>] [--foreground] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>] [--json]"
     );
   }
 
@@ -378,8 +389,9 @@ async function handleUp({ positionals, dataDir, json, foreground, port, bind, mo
       bind: resolvedBind,
       port: resolvedPort,
       dataDir: resolvedDataDir,
-      model,
-      ollamaUrl,
+      jevModel,
+      jevUrl,
+      jevApiKey,
       writeFiles: true,
       exitOnShutdown: true,
     });
@@ -429,12 +441,17 @@ async function handleUp({ positionals, dataDir, json, foreground, port, bind, mo
     "--data",
     resolvedDataDir,
   ];
-  if (model !== undefined) {
-    childArgs.push("--model", model);
+  if (jevModel !== undefined) {
+    childArgs.push("--jev-model", jevModel);
   }
-  if (ollamaUrl !== undefined) {
-    childArgs.push("--ollama", ollamaUrl);
+  if (jevUrl !== undefined) {
+    childArgs.push("--jev-url", jevUrl);
   }
+
+  const childEnv =
+    jevApiKey !== undefined
+      ? { ...process.env, BP_JEV_API_KEY: jevApiKey }
+      : process.env;
 
   let proc;
   try {
@@ -443,6 +460,7 @@ async function handleUp({ positionals, dataDir, json, foreground, port, bind, mo
       stdin: "ignore",
       stdout: logFd,
       stderr: logFd,
+      env: childEnv,
     });
     proc.unref();
   } finally {
@@ -561,8 +579,9 @@ async function main() {
     port,
     bind,
     limit,
-    model,
-    ollamaUrl,
+    jevModel,
+    jevUrl,
+    jevApiKey,
     help,
     version,
   } = parseCliArgs(process.argv.slice(2));
@@ -578,16 +597,18 @@ async function main() {
     return;
   }
 
+  const hasJevOpts = jevModel !== undefined || jevUrl !== undefined || jevApiKey !== undefined;
+
   if (command === "up") {
     if (dev || init || maxSteps !== undefined || limit !== undefined) {
       throw new Error('Options --dev, --init, --max-steps, and --limit are not supported with "bp up".');
     }
-    await handleUp({ positionals, dataDir, json, foreground, port, bind, model, ollamaUrl });
+    await handleUp({ positionals, dataDir, json, foreground, port, bind, jevModel, jevUrl, jevApiKey });
     return;
   }
 
   if (command === "down") {
-    if (dev || init || foreground || port !== undefined || bind !== undefined || limit !== undefined || maxSteps !== undefined || model !== undefined || ollamaUrl !== undefined) {
+    if (dev || init || foreground || port !== undefined || bind !== undefined || limit !== undefined || maxSteps !== undefined || hasJevOpts) {
       throw new Error('Options other than --data and --json are not supported with "bp down".');
     }
     await handleDown({ positionals, dataDir, json });
@@ -595,7 +616,7 @@ async function main() {
   }
 
   if (command === "reload") {
-    if (init || foreground || port !== undefined || bind !== undefined || limit !== undefined || maxSteps !== undefined || model !== undefined || ollamaUrl !== undefined) {
+    if (init || foreground || port !== undefined || bind !== undefined || limit !== undefined || maxSteps !== undefined || hasJevOpts) {
       throw new Error('Only [slug], --dev, --data, and --json are supported with "bp reload".');
     }
     if (positionals.length > 2) {
@@ -616,7 +637,7 @@ async function main() {
   }
 
   if (command === "emit") {
-    if (init || foreground || port !== undefined || bind !== undefined || limit !== undefined || maxSteps !== undefined || model !== undefined || ollamaUrl !== undefined) {
+    if (init || foreground || port !== undefined || bind !== undefined || limit !== undefined || maxSteps !== undefined || hasJevOpts) {
       throw new Error('Only <slug> <event> [json], --dev, --data, and --json are supported with "bp emit".');
     }
     if (positionals.length < 3 || positionals.length > 4) {
@@ -647,7 +668,7 @@ async function main() {
   }
 
   if (command === "logs") {
-    if (init || foreground || port !== undefined || bind !== undefined || maxSteps !== undefined || model !== undefined || ollamaUrl !== undefined) {
+    if (init || foreground || port !== undefined || bind !== undefined || maxSteps !== undefined || hasJevOpts) {
       throw new Error('Only <slug>, --dev, --limit, --data, and --json are supported with "bp logs".');
     }
     if (positionals.length !== 2) {
@@ -669,9 +690,9 @@ async function main() {
   }
 
   if (command === "sql") {
-    if (init || maxSteps !== undefined || model !== undefined || ollamaUrl !== undefined) {
+    if (init || maxSteps !== undefined || hasJevOpts) {
       throw new Error(
-        'Options --init, --max-steps, --model, and --ollama are only supported with "bp run".'
+        'Options --init, --max-steps, --jev-url, --jev-model, and --jev-key are only supported with "bp run".'
       );
     }
     if (foreground || port !== undefined || bind !== undefined || limit !== undefined) {
@@ -706,7 +727,7 @@ async function main() {
     if (init) {
       if (positionals.length !== 2) {
         throw new Error(
-          "Usage: bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--model <name>] [--ollama <url>]"
+          "Usage: bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]"
         );
       }
       const res = await runBlueprintFlow({
@@ -715,8 +736,9 @@ async function main() {
         dev,
         dataDir,
         maxSteps,
-        model,
-        ollamaUrl,
+        jevModel,
+        jevUrl,
+        jevApiKey,
       });
       printFlowResult(res, json);
       return;
@@ -724,7 +746,7 @@ async function main() {
 
     if (positionals.length < 3 || positionals.length > 4) {
       throw new Error(
-        "Usage: bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-steps <n>] [--model <name>] [--ollama <url>]"
+        "Usage: bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]"
       );
     }
 
@@ -744,8 +766,9 @@ async function main() {
       dev,
       dataDir,
       maxSteps,
-      model,
-      ollamaUrl,
+      jevModel,
+      jevUrl,
+      jevApiKey,
     });
     printFlowResult(res, json);
     return;

@@ -7,14 +7,14 @@
 ## Prerequisites
 
 - **`bun`** and **`sqlite`** — Required to run the `bp` CLI, daemon, and local SQLite persistence.
-- **`ollama` (`qwen3.5:9b` model)** — Required for running natural-language flow decision routing.
+- **Jev Decision Model (`jev-1.14` via `https://api.typesafe.ai/v1/systemone`)** — Required for running natural-language flow decision routing (configure `BP_JEV_API_KEY` or `JEV_API_KEY`; override with `--jev-url` / `BP_JEV_URL`, `--jev-model` / `BP_JEV_MODEL`, and `--jev-key`).
 - **`agy` CLI (optional)** — Required when executing `<script type="blueprint/ai" cli="agy">` nodes.
 
 ## Installation
 
 Copy and send the following prompt to your coding agent to install Engineer-Blueprint on your machine:
 
-> Please set up Engineer-Blueprint for me from this repository. First check that `bun`, `sqlite`, and `ollama` are installed and available on this machine, verify that `ollama` is running, and ensure the `qwen3.5:9b` model (used for natural-language flow decision routing) is pulled and available locally (install, pull, or report if anything is missing). Next, install the CLI from the `cli/` directory (link or expose its `bp` binary globally so `bp` can be invoked directly) and install the Agent skill from `skill/` (`skill/README.md`, `skill/def.md`, `skill/flow.md`, `skill/js.md`, `skill/sh.md`, `skill/ai.md`, `skill/daemon.md`, and `skill/workflows.md`) into my local agent skills directory (e.g. `~/.agents/skills/engineer-blueprint/`). Finally, verify that everything works by running the CLI test suite, checking that the `bp` command responds properly, and confirming `ollama` with `qwen3.5:9b` is ready.
+> Please set up Engineer-Blueprint for me from this repository. First check that `bun` and `sqlite` are installed and available on this machine, and check whether `BP_JEV_API_KEY` or `JEV_API_KEY` is configured for Jev flow decision routing (default endpoint `https://api.typesafe.ai/v1/systemone`, model `jev-1.14`; report if any prerequisite is missing). Next, install the CLI from the `cli/` directory (link or expose its `bp` binary globally so `bp` can be invoked directly) and install the Agent skill from `skill/` (`skill/README.md`, `skill/def.md`, `skill/flow.md`, `skill/js.md`, `skill/sh.md`, `skill/ai.md`, `skill/daemon.md`, and `skill/workflows.md`) into my local agent skills directory (e.g. `~/.agents/skills/engineer-blueprint/`). Finally, verify that everything works by running the CLI test suite and checking that the `bp` command responds properly.
 
 ## Repository Structure
 

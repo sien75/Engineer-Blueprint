@@ -9,7 +9,7 @@ Operational guide for running the persistent `bp` daemon (`bp up`, `bp down`, `b
 Default data directory is `$BP_DATA` or `~/.engineer-blueprint/data` (override with `--data <dir>`).
 
 ```bash
-bp up [dir] [--port <n>] [--bind <host>] [--data <dir>] [--foreground] [--model <name>] [--ollama <url>] [--json]
+bp up [dir] [--port <n>] [--bind <host>] [--data <dir>] [--foreground] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>] [--json]
 bp down [--data <dir>] [--json]
 bp reload [slug] [--dev] [--data <dir>] [--json]
 bp emit <slug> <event> [json-data] [--dev] [--data <dir>] [--json]

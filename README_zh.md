@@ -7,14 +7,14 @@
 ## 前置依赖
 
 - **`bun` 与 `sqlite`**：用于运行 `bp` CLI、Daemon 与本地 SQLite 持久化存储。
-- **`ollama`（`qwen3.5:9b` 模型）**：用于执行自然语言流程决策路由。
+- **Jev 决策模型（默认 `https://api.typesafe.ai/v1/systemone`，模型 `jev-1.14`）**：用于执行自然语言流程决策路由（需配置 `BP_JEV_API_KEY` 或 `JEV_API_KEY`；可通过 `--jev-url` / `BP_JEV_URL`、`--jev-model` / `BP_JEV_MODEL` 与 `--jev-key` 覆盖）。
 - **`agy` CLI（可选）**：运行 `<script type="blueprint/ai" cli="agy">` 节点时需要。
 
 ## 安装
 
 复制以下提示词并发送给你的编程 Agent，即可在本地机器上安装 Engineer-Blueprint：
 
-> 请基于当前仓库为我安装配置 Engineer-Blueprint。首先检查本机是否已安装并可正常使用 `bun`、`sqlite` 与 `ollama`，确认 `ollama` 正在运行，并确保本地已拉取且可用 `qwen3.5:9b` 模型（用于自然语言流程决策路由；如有缺失，请协助安装、拉取或向我报告）。接着，从 `cli/` 目录安装 CLI 工具（将其 `bp` 可执行文件链接或暴露到全局路径，以便直接调用 `bp`），并将 `skill/zh/`（`skill/zh/README.md`、`skill/zh/def.md`、`skill/zh/flow.md`、`skill/zh/js.md`、`skill/zh/sh.md`、`skill/zh/ai.md`、`skill/zh/daemon.md` 与 `skill/zh/workflows.md`，对应英文目录为 `skill/`）中的 Agent Skill 安装到我本地的 agent skills 目录中（例如 `~/.agents/skills/engineer-blueprint/`）。最后，运行 CLI 测试套件、验证 `bp` 命令正常响应并确认 `ollama` 与 `qwen3.5:9b` 就绪，以确保全部组件工作正常。
+> 请基于当前仓库为我安装配置 Engineer-Blueprint。首先检查本机是否已安装并可正常使用 `bun` 与 `sqlite`，并确认是否已配置 `BP_JEV_API_KEY` 或 `JEV_API_KEY`（用于 Jev 自然语言流程决策路由，默认端点 `https://api.typesafe.ai/v1/systemone`，默认模型 `jev-1.14`；如有缺失，请向我报告）。接着，从 `cli/` 目录安装 CLI 工具（将其 `bp` 可执行文件链接或暴露到全局路径，以便直接调用 `bp`），并将 `skill/zh/`（`skill/zh/README.md`、`skill/zh/def.md`、`skill/zh/flow.md`、`skill/zh/js.md`、`skill/zh/sh.md`、`skill/zh/ai.md`、`skill/zh/daemon.md` 与 `skill/zh/workflows.md`，对应英文目录为 `skill/`）中的 Agent Skill 安装到我本地的 agent skills 目录中（例如 `~/.agents/skills/engineer-blueprint/`）。最后，运行 CLI 测试套件并验证 `bp` 命令正常响应，以确保全部组件工作正常。
 
 ## 目录结构
 

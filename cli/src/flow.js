@@ -10,8 +10,8 @@ import { isReadOnlySqlScript } from "./sql.js";
 
 export const DEFAULT_MAX_STEPS = 16;
 export const DECISION_PREVIEW_MAX_LEN = 500;
-export const DEFAULT_ROUTER_MODEL = "qwen3.5:9b";
-export const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
+export const DEFAULT_JEV_MODEL = "jev-1.14";
+export const DEFAULT_JEV_URL = "https://api.typesafe.ai/v1";
 
 let jsTempCounter = 0;
 let shTempCounter = 0;
@@ -61,9 +61,9 @@ function serializeEventDataPreview(data, maxLen = DECISION_PREVIEW_MAX_LEN) {
 }
 
 /**
- * Build the decision prompt and structured metadata sent to the router model / decider.
+ * Build the decision input and TypeSafe System One payload sent to the Jev decider.
  */
-export function buildDecisionInput({ step, flow, ctx, nodes, choices, model, ollamaUrl }) {
+export function buildDecisionInput({ step, flow, ctx, nodes, choices, jevModel, jevUrl }) {
   const eventDataPreview = serializeEventDataPreview(ctx.event.data, DECISION_PREVIEW_MAX_LEN);
 
   const historySummaries = ctx.history.map((entry) => {
@@ -90,7 +90,7 @@ export function buildDecisionInput({ step, flow, ctx, nodes, choices, model, oll
     "- done: Flow is complete, stop",
   ].join("\n");
 
-  const userPrompt = [
+  const state = [
     "## Flow Instructions",
     flow.prompt,
     "",
@@ -100,22 +100,25 @@ export function buildDecisionInput({ step, flow, ctx, nodes, choices, model, oll
     "",
     "## Execution Progress",
     progressText,
-    "",
-    "## Available Choices",
-    choiceLines,
   ].join("\n");
 
-  const messages = [
-    {
-      role: "system",
-      content:
-        'You are a strict workflow step router. Choose the single next action node ID from the available choices, or "done" when the flow is complete. Respond strictly as JSON {"next":"<choice>"}.',
+  const userPrompt = [state, "", "## Available Choices", choiceLines].join("\n");
+
+  const criteria = {};
+  for (const node of nodes) {
+    const desc = typeof node.desc === "string" ? node.desc.trim() : "";
+    criteria[node.id] = desc || `Execute ${node.type} node "${node.id}"`;
+  }
+  criteria.done = "Flow is complete, stop";
+
+  const questions = {
+    next: {
+      type: "choice",
+      instructions:
+        'Choose the single next action node ID to execute based on the flow instructions, trigger event, and execution progress, or choose "done" when the flow is complete.',
+      criteria,
     },
-    {
-      role: "user",
-      content: userPrompt,
-    },
-  ];
+  };
 
   return {
     step,
@@ -128,18 +131,27 @@ export function buildDecisionInput({ step, flow, ctx, nodes, choices, model, oll
     choices,
     nodes: nodes.map((n) => ({ id: n.id, type: n.type, desc: n.desc })),
     prompt: userPrompt,
-    messages,
-    model,
-    ollamaUrl,
+    state,
+    questions,
+    jevModel,
+    jevUrl,
   };
 }
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
-export function ensureLoopbackNoProxy(endpoint) {
+export function isLoopbackEndpoint(endpoint) {
   try {
     const hostname = new URL(endpoint).hostname.toLowerCase();
-    if (!LOOPBACK_HOSTS.has(hostname)) return;
+    return LOOPBACK_HOSTS.has(hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function ensureLoopbackNoProxy(endpoint) {
+  try {
+    if (!isLoopbackEndpoint(endpoint)) return;
     const existing = [process.env.NO_PROXY, process.env.no_proxy]
       .filter(Boolean)
       .join(",")
@@ -154,51 +166,68 @@ export function ensureLoopbackNoProxy(endpoint) {
   }
 }
 
+export function resolveJevApiKey(jevApiKey) {
+  const candidates = [
+    jevApiKey,
+    process.env.BP_JEV_API_KEY,
+    process.env.JEV_API_KEY,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return "";
+}
+
 /**
- * Create the default Ollama `/api/chat` step router using JSON schema output constraints.
+ * Create the default Jev (`/systemone`) step router.
  */
-export function createOllamaDecider({ model = DEFAULT_ROUTER_MODEL, ollamaUrl = DEFAULT_OLLAMA_URL } = {}) {
-  const baseUrl = ollamaUrl.replace(/\/+$/, "");
-  const endpoint = `${baseUrl}/api/chat`;
+export function createJevDecider({
+  jevModel = DEFAULT_JEV_MODEL,
+  jevUrl = DEFAULT_JEV_URL,
+  jevApiKey,
+} = {}) {
+  const baseUrl = jevUrl.replace(/\/+$/, "");
+  const endpoint = baseUrl.endsWith("/systemone") ? baseUrl : `${baseUrl}/systemone`;
   ensureLoopbackNoProxy(endpoint);
 
   return async (decisionInput) => {
+    const resolvedApiKey = resolveJevApiKey(jevApiKey);
+    if (!resolvedApiKey && !isLoopbackEndpoint(endpoint)) {
+      throw new Error(
+        `Missing API key for Jev at ${endpoint}. Set BP_JEV_API_KEY (or --jev-key).`
+      );
+    }
+
+    const headers = { "Content-Type": "application/json" };
+    if (resolvedApiKey) {
+      headers.Authorization = `Bearer ${resolvedApiKey}`;
+    }
+
     const body = {
-      model,
-      stream: false,
-      think: false,
-      messages: decisionInput.messages,
-      format: {
-        type: "object",
-        properties: {
-          next: {
-            type: "string",
-            enum: decisionInput.choices,
-          },
-        },
-        required: ["next"],
-        additionalProperties: false,
-      },
+      model: jevModel,
+      state: decisionInput.state,
+      questions: decisionInput.questions,
     };
 
     let response;
     try {
       response = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(body),
       });
     } catch (err) {
       throw new Error(
-        `Failed to connect to Ollama at ${endpoint}: ${err.message}. Ensure Ollama is running or set --ollama / BP_OLLAMA_URL.`
+        `Failed to connect to Jev at ${endpoint}: ${err.message}. Check --jev-url / BP_JEV_URL and network connectivity.`
       );
     }
 
     if (!response.ok) {
       const errBody = truncateText((await response.text().catch(() => "")).trim(), 300);
-      const hint = response.status === 404 ? ` Run "ollama pull ${model}" if the model is missing.` : "";
       throw new Error(
-        `Ollama API error (HTTP ${response.status} ${response.statusText}) for model "${model}" at ${endpoint}${errBody ? `: ${errBody}` : ""}.${hint}`
+        `Jev API error (HTTP ${response.status} ${response.statusText}) for model "${jevModel}" at ${endpoint}${errBody ? `: ${errBody}` : ""}.`
       );
     }
 
@@ -206,27 +235,20 @@ export function createOllamaDecider({ model = DEFAULT_ROUTER_MODEL, ollamaUrl = 
     try {
       payload = await response.json();
     } catch (err) {
-      throw new Error(`Invalid JSON response from Ollama at ${endpoint}: ${err.message}`);
+      throw new Error(`Invalid JSON response from Jev at ${endpoint}: ${err.message}`);
     }
 
-    const content = payload?.message?.content;
-    if (typeof content !== "string" || content.trim().length === 0) {
-      throw new Error(`Invalid Ollama response from ${endpoint}: missing message.content.`);
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(content);
-    } catch (err) {
+    const answer = payload?.answers?.next;
+    const next = typeof answer === "string" ? answer : answer?.choice;
+    if (typeof next !== "string" || next.trim().length === 0) {
       throw new Error(
-        `Ollama model "${model}" returned non-JSON decision content (${err.message}): ${truncateText(content, 200)}`
+        `Invalid Jev response from ${endpoint}: missing answers.next.choice.`
       );
     }
 
-    const next = parsed?.next;
-    if (typeof next !== "string" || !decisionInput.choices.includes(next)) {
+    if (!decisionInput.choices.includes(next)) {
       throw new Error(
-        `Ollama model "${model}" selected invalid choice ${JSON.stringify(next)}; expected one of [${decisionInput.choices.join(", ")}].`
+        `Jev model "${jevModel}" selected invalid choice ${JSON.stringify(next)}; expected one of [${decisionInput.choices.join(", ")}].`
       );
     }
 
@@ -377,8 +399,9 @@ function findMatchingFlows(parsed, { init, eventType }) {
  *   dbPath: string,
  *   mode: string,
  *   maxSteps?: number,
- *   model?: string,
- *   ollamaUrl?: string,
+ *   jevModel?: string,
+ *   jevUrl?: string,
+ *   jevApiKey?: string,
  *   decide?: (decisionInput: object) => Promise<string | { next: string }> | string | { next: string },
  *   hooks?: {
  *     onFlowStart?: (info: object) => Promise<void> | void,
@@ -397,8 +420,9 @@ export async function executeFlows({
   dbPath,
   mode,
   maxSteps = DEFAULT_MAX_STEPS,
-  model,
-  ollamaUrl,
+  jevModel,
+  jevUrl,
+  jevApiKey,
   decide,
   hooks = {},
 }) {
@@ -406,21 +430,21 @@ export async function executeFlows({
     throw new Error(`Invalid maxSteps "${maxSteps}": must be a positive integer.`);
   }
 
-  const resolvedModel =
-    (typeof model === "string" && model.trim()) ||
-    process.env.BP_ROUTER_MODEL ||
-    DEFAULT_ROUTER_MODEL;
-  const resolvedOllamaUrl = (
-    (typeof ollamaUrl === "string" && ollamaUrl.trim()) ||
-    process.env.BP_OLLAMA_URL ||
-    DEFAULT_OLLAMA_URL
+  const resolvedJevModel =
+    (typeof jevModel === "string" && jevModel.trim()) ||
+    process.env.BP_JEV_MODEL ||
+    DEFAULT_JEV_MODEL;
+  const resolvedJevUrl = (
+    (typeof jevUrl === "string" && jevUrl.trim()) ||
+    process.env.BP_JEV_URL ||
+    DEFAULT_JEV_URL
   ).replace(/\/+$/, "");
 
   const choices = [...parsed.nodes.map((n) => n.id), "done"];
   const decideFn =
     typeof decide === "function"
       ? decide
-      : createOllamaDecider({ model: resolvedModel, ollamaUrl: resolvedOllamaUrl });
+      : createJevDecider({ jevModel: resolvedJevModel, jevUrl: resolvedJevUrl, jevApiKey });
 
   const normalizedData = eventData === undefined ? null : eventData;
   const flowResults = [];
@@ -447,8 +471,8 @@ export async function executeFlows({
           ctx,
           nodes: parsed.nodes,
           choices,
-          model: resolvedModel,
-          ollamaUrl: resolvedOllamaUrl,
+          jevModel: resolvedJevModel,
+          jevUrl: resolvedJevUrl,
         });
 
         const rawChoice = await decideFn(decisionInput);
@@ -554,8 +578,9 @@ export async function executeFlows({
  *   dev?: boolean,
  *   dataDir?: string,
  *   maxSteps?: number,
- *   model?: string,
- *   ollamaUrl?: string,
+ *   jevModel?: string,
+ *   jevUrl?: string,
+ *   jevApiKey?: string,
  *   decide?: (decisionInput: object) => Promise<string | { next: string }> | string | { next: string }
  * }} options
  */
@@ -567,8 +592,9 @@ export async function runBlueprintFlow({
   dev = false,
   dataDir,
   maxSteps = DEFAULT_MAX_STEPS,
-  model,
-  ollamaUrl,
+  jevModel,
+  jevUrl,
+  jevApiKey,
   decide,
 }) {
   if (!Number.isInteger(maxSteps) || maxSteps < 1) {
@@ -600,8 +626,9 @@ export async function runBlueprintFlow({
     dbPath: syncResult.dbPath,
     mode: syncResult.mode,
     maxSteps,
-    model,
-    ollamaUrl,
+    jevModel,
+    jevUrl,
+    jevApiKey,
     decide,
   });
 }

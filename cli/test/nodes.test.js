@@ -566,17 +566,25 @@ describe("blueprint/ai runtime execution (mock agy CLI)", () => {
     expect(missingText.emittedEvents[0].event).toBe("ai:failed");
   });
 
-  test("end-to-end bp run CLI combines blueprint/sh and blueprint/ai with mock Ollama and BP_AGY_BIN", async () => {
+  test("end-to-end bp run CLI combines blueprint/sh and blueprint/ai with mock Jev server and BP_AGY_BIN", async () => {
     const mock = createMockAgy();
     let turn = 0;
     const server = Bun.serve({
       port: 0,
-      async fetch() {
-        const order = ["prep-sh", "ai-step", "done"];
-        const next = order[turn++] ?? "done";
-        return Response.json({
-          message: { role: "assistant", content: JSON.stringify({ next }) },
-        });
+      async fetch(req) {
+        const url = new URL(req.url);
+        if (req.method === "POST" && url.pathname === "/systemone") {
+          const body = await req.json();
+          const order = ["prep-sh", "ai-step", "done"];
+          const next = order[turn++] ?? "done";
+          return Response.json({
+            model: body.model,
+            answers: {
+              next: { type: "choice", choice: next, probabilities: { [next]: 1 }, confidence: 1 },
+            },
+          });
+        }
+        return new Response("Not found", { status: 404 });
       },
     });
 
@@ -608,7 +616,7 @@ describe("blueprint/ai runtime execution (mock agy CLI)", () => {
           JSON.stringify({ task: "audit" }),
           "--data",
           dataDir,
-          "--ollama",
+          "--jev-url",
           `http://127.0.0.1:${server.port}`,
           "--json",
         ],

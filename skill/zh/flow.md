@@ -6,7 +6,7 @@
 
 ## 1. 编写 `<script type="blueprint/flow">`
 
-每个 `<script type="blueprint/flow">` 代码块用自然语言声明业务路由规则，由路由模型（默认通过 Ollama 调用 `qwen3.5:9b`）逐步决定下一个执行节点：
+每个 `<script type="blueprint/flow">` 代码块用自然语言声明业务路由规则，由云端 Jev 决策模型（默认通过 `https://api.typesafe.ai/v1/systemone` 调用 `jev-1.14`）逐步决定下一个执行节点：
 
 - **必须且只能声明一个触发属性**：
   - `on="<event>"`：响应 `bp.emit(...)`、`bp emit <slug> <event>` 或离线 `bp run <file.html> <event>` 触发。
@@ -82,9 +82,9 @@ INSERT INTO notes (id, body) VALUES (:id, :body);
 }
 ```
 
-### `qwen3.5:9b` 决策路由与 500 字符截断
+### Jev 决策路由与 500 字符截断
 
-每一轮决策都会通过 JSON Schema 约束模型从 `[...nodeIds, "done"]` 中选择下一步 `{"next": "<choice>"}`。决策提示词包含：
+每一轮决策都会通过 Jev System One 的 `choice` 问题从 `[...nodeIds, "done"]` 中选择下一步（读取 `answers.next.choice`）。决策 `state` 包含：
 
 1. Flow 自然语言指令正文；
 2. 触发事件 `type` 与 JSON 序列化后**截断至最多 500 字符**的 `data`；
@@ -112,11 +112,11 @@ INSERT INTO notes (id, body) VALUES (:id, :body);
 在常驻 Daemon 中运行流程（含 `every` 定时调度与 WebSocket 推送）请使用 `bp up` + `bp emit`（见 [`daemon.md`](daemon.md)）。若需针对单个 `.html` 文件直接离线执行一次流程，使用 `bp run`：
 
 ```bash
-bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-steps <n>] [--model <name>] [--ollama <url>]
-bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--model <name>] [--ollama <url>]
+bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]
+bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]
 ```
 
 - 执行匹配 Flow 前会自动根据 `<script type="blueprint/def">` 同步 `<id>.<mode>.sqlite` 表结构。
 - `--dev` 指向开发环境数据库；`--data <dir>` 覆盖 `$BP_DATA` / `~/.engineer-blueprint/data`。
-- `--model` 覆盖 `$BP_ROUTER_MODEL`（默认 `qwen3.5:9b`）；`--ollama` 覆盖 `$BP_OLLAMA_URL`（默认 `http://127.0.0.1:11434`）。
+- `--jev-url` 覆盖 `$BP_JEV_URL`（默认 `https://api.typesafe.ai/v1`）；`--jev-model` 覆盖 `$BP_JEV_MODEL`（默认 `jev-1.14`）；`--jev-key` 覆盖 `$BP_JEV_API_KEY` / `$JEV_API_KEY`。
 - `--max-steps <n>` 设置最大决策轮数（正整数，默认 `16`）；`--json` 输出结构化 JSON 结果。

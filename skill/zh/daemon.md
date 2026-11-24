@@ -9,7 +9,7 @@
 默认数据目录为 `$BP_DATA` 或 `~/.engineer-blueprint/data`（可通过 `--data <dir>` 覆盖）。
 
 ```bash
-bp up [dir] [--port <n>] [--bind <host>] [--data <dir>] [--foreground] [--model <name>] [--ollama <url>] [--json]
+bp up [dir] [--port <n>] [--bind <host>] [--data <dir>] [--foreground] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>] [--json]
 bp down [--data <dir>] [--json]
 bp reload [slug] [--dev] [--data <dir>] [--json]
 bp emit <slug> <event> [json-data] [--dev] [--data <dir>] [--json]

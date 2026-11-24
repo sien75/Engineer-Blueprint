@@ -6,7 +6,7 @@ Specification and operational guide for authoring natural-language workflows (`<
 
 ## 1. Writing `<script type="blueprint/flow">`
 
-Each `<script type="blueprint/flow">` block declares a natural-language routing specification evaluated step-by-step by the router model (`qwen3.5:9b` via Ollama by default):
+Each `<script type="blueprint/flow">` block declares a natural-language routing specification evaluated step-by-step by Jev (`jev-1.14` via `https://api.typesafe.ai/v1/systemone` by default):
 
 - **Exactly one trigger attribute** is required on every flow block:
   - `on="<event>"` — Runs when triggered via `bp.emit(...)`, `bp emit <slug> <event>`, or offline `bp run <file.html> <event>`.
@@ -81,9 +81,9 @@ Every downstream action node receives a fresh clone of the full, untruncated `ct
 }
 ```
 
-### Decision Loop (`qwen3.5:9b`) & 500-Char Truncation
+### Decision Loop (Jev) & 500-Char Truncation
 
-At each turn, the router model chooses the next node `id` or `"done"` via JSON schema constraint (`{"next": "<choice>"}`). The decision prompt contains:
+At each turn, Jev selects the next node `id` or `"done"` via a System One `choice` question (`answers.next.choice`). The decision `state` contains:
 
 1. The flow's natural-language instructions.
 2. Trigger event `type` and JSON-serialized `data` **truncated to at most 500 characters**.
@@ -111,11 +111,11 @@ Before finalizing a blueprint containing flows, verify all four rules:
 For live/daemon execution (including `every` schedules and WebSocket pushes), use `bp up` + `bp emit` ([`daemon.md`](daemon.md)). For isolated offline single runs directly against a `.html` file:
 
 ```bash
-bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-steps <n>] [--model <name>] [--ollama <url>]
-bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--model <name>] [--ollama <url>]
+bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]
+bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]
 ```
 
 - Automatically reconciles `<script type="blueprint/def">` with `<id>.<mode>.sqlite` before running matching flow(s).
 - `--dev` targets `dev` mode instead of `prod`; `--data <dir>` overrides `$BP_DATA` / `~/.engineer-blueprint/data`.
-- `--model` overrides `$BP_ROUTER_MODEL` (default `qwen3.5:9b`); `--ollama` overrides `$BP_OLLAMA_URL` (default `http://127.0.0.1:11434`).
+- `--jev-url` overrides `$BP_JEV_URL` (default `https://api.typesafe.ai/v1`); `--jev-model` overrides `$BP_JEV_MODEL` (default `jev-1.14`); `--jev-key` overrides `$BP_JEV_API_KEY` / `$JEV_API_KEY`.
 - `--max-steps <n>` sets the loop guard (positive integer, default `16`); `--json` outputs structured JSON.

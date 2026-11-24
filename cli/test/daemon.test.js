@@ -98,24 +98,27 @@ async function runCliAsync(args, envOverrides = {}) {
   return { exitCode, stdout, stderr };
 }
 
-function createMockOllama(decideNext) {
+function createMockJev(decideNext) {
   const requests = [];
   const srv = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
     async fetch(req) {
       const url = new URL(req.url);
-      if (req.method === "POST" && url.pathname === "/api/chat") {
+      if (req.method === "POST" && url.pathname === "/systemone") {
         const body = await req.json();
         requests.push(body);
         const next = await decideNext(body, requests.length);
         return Response.json({
           model: body.model,
-          message: {
-            role: "assistant",
-            content: JSON.stringify({ next }),
+          answers: {
+            next: {
+              type: "choice",
+              choice: next,
+              probabilities: { [next]: 1 },
+              confidence: 1,
+            },
           },
-          done: true,
         });
       }
       return new Response("Not Found", { status: 404 });
@@ -519,8 +522,8 @@ describe("Daemon HTTP overview, HTML stripping, client.js, and WS API", () => {
   });
 
   test("single unified WebSocket handles watch, unwatch, read-only sql, write rejection, emit flow + blueprint/emit broadcast, and bp sql write notify", async () => {
-    const mockOllama = createMockOllama((body) => {
-      const prompt = body.messages[1].content;
+    const mockJev = createMockJev((body) => {
+      const prompt = body.state;
       if (prompt.includes("(none yet)")) return "save-msg";
       if (prompt.includes("#1 save-msg [ok]") && !prompt.includes("#2 notify-saved")) return "notify-saved";
       return "done";
@@ -560,7 +563,7 @@ describe("Daemon HTTP overview, HTML stripping, client.js, and WS API", () => {
       bind: "127.0.0.1",
       port: 0,
       dataDir,
-      ollamaUrl: mockOllama.url,
+      jevUrl: mockJev.url,
       writeFiles: true,
     });
     activeDaemons.push(daemon);
@@ -707,9 +710,9 @@ describe("CLI commands: bp up, bp down, bp reload, bp emit, bp logs, and schedul
     expect(staleStatus.cleanedStale).toBe(true);
     expect(fs.existsSync(path.join(dataDir, "daemon.json"))).toBe(false);
 
-    // Prepare mock Ollama + blueprint with init + on + every="1s"
-    const mockOllama = createMockOllama((body) => {
-      const prompt = body.messages[1].content;
+    // Prepare mock Jev + blueprint with init + on + every="1s"
+    const mockJev = createMockJev((body) => {
+      const prompt = body.state;
       if (prompt.includes("type: init") && prompt.includes("(none yet)")) return "init-mark";
       if (prompt.includes("type: every") && prompt.includes("(none yet)")) return "tick-inc";
       if (prompt.includes("type: note:add") && prompt.includes("(none yet)")) return "add-note";
@@ -771,8 +774,8 @@ describe("CLI commands: bp up, bp down, bp reload, bp emit, bp logs, and schedul
       String(freePort),
       "--data",
       dataDir,
-      "--ollama",
-      mockOllama.url,
+      "--jev-url",
+      mockJev.url,
       "--json",
     ]);
     expect(upRes.exitCode).toBe(0);

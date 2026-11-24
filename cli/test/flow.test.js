@@ -605,14 +605,16 @@ describe("runBlueprintFlow runtime", () => {
   });
 });
 
-describe("CLI bp run end-to-end with mock Ollama server", () => {
-  test("bp run sends expected Ollama /api/chat payload, handles --init, and validates CLI flags", async () => {
+describe("CLI bp run end-to-end with mock Jev server", () => {
+  test("bp run sends expected Jev /systemone payload, handles --init, and validates CLI flags", async () => {
     const recordedRequests = [];
+    const recordedAuthHeaders = [];
     const server = Bun.serve({
       port: 0,
       async fetch(req) {
         const url = new URL(req.url);
-        if (req.method === "POST" && url.pathname === "/api/chat") {
+        if (req.method === "POST" && url.pathname === "/systemone") {
+          recordedAuthHeaders.push(req.headers.get("authorization"));
           const body = await req.json();
           recordedRequests.push(body);
           const turn = recordedRequests.length;
@@ -625,11 +627,14 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
 
           return Response.json({
             model: body.model,
-            message: {
-              role: "assistant",
-              content: JSON.stringify({ next }),
+            answers: {
+              next: {
+                type: "choice",
+                choice: next,
+                probabilities: { [next]: 0.99 },
+                confidence: 0.99,
+              },
             },
-            done: true,
           });
         }
         return new Response("Not found", { status: 404 });
@@ -637,7 +642,7 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
     });
 
     try {
-      const ollamaUrl = `http://127.0.0.1:${server.port}`;
+      const jevUrl = `http://127.0.0.1:${server.port}`;
       const longPad = "Z".repeat(700);
       const htmlFile = writeBlueprint(
         "e2e.html",
@@ -671,22 +676,25 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
         `
       );
 
-      const res = await runCliAsync([
-        "run",
-        htmlFile,
-        "note:add",
-        JSON.stringify({ id: "e1", body: "  via ollama mock  " }),
-        "--dev",
-        "--data",
-        dataDir,
-        "--ollama",
-        ollamaUrl,
-        "--model",
-        "qwen3.5:9b",
-        "--max-steps",
-        "8",
-        "--json",
-      ]);
+      const res = await runCliAsync(
+        [
+          "run",
+          htmlFile,
+          "note:add",
+          JSON.stringify({ id: "e1", body: "  via jev mock  " }),
+          "--dev",
+          "--data",
+          dataDir,
+          "--jev-url",
+          jevUrl,
+          "--jev-model",
+          "jev-1.14",
+          "--max-steps",
+          "8",
+          "--json",
+        ],
+        { BP_JEV_API_KEY: "test-jev-key" }
+      );
 
       expect(res.exitCode).toBe(0);
       const parsedOut = JSON.parse(res.stdout);
@@ -701,33 +709,34 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
         dev: true,
         dataDir,
       }).rows;
-      expect(rows).toEqual([{ id: "e1", body: "via ollama mock" }]);
+      expect(rows).toEqual([{ id: "e1", body: "via jev mock" }]);
 
-      // Verify exact Ollama request payloads for the 3 turns
+      // Verify exact Jev request payloads and Bearer auth for the 3 turns
       expect(recordedRequests).toHaveLength(3);
+      expect(recordedAuthHeaders).toEqual([
+        "Bearer test-jev-key",
+        "Bearer test-jev-key",
+        "Bearer test-jev-key",
+      ]);
       for (const reqBody of recordedRequests) {
-        expect(reqBody.model).toBe("qwen3.5:9b");
-        expect(reqBody.stream).toBe(false);
-        expect(reqBody.think).toBe(false);
-        expect(reqBody.format).toEqual({
-          type: "object",
-          properties: {
-            next: {
-              type: "string",
-              enum: ["clean", "save-note", "init-mark", "done"],
-            },
-          },
-          required: ["next"],
-          additionalProperties: false,
+        expect(reqBody.model).toBe("jev-1.14");
+        expect(typeof reqBody.state).toBe("string");
+        expect(reqBody.questions?.next?.type).toBe("choice");
+        expect(typeof reqBody.questions?.next?.instructions).toBe("string");
+        expect(reqBody.questions?.next?.criteria).toEqual({
+          clean: "Trim note body",
+          "save-note": "Save note to DB",
+          "init-mark": "Record initialization flag",
+          done: "Flow is complete, stop",
         });
       }
 
       // Turn 1 had (none yet)
-      expect(recordedRequests[0].messages[1].content).toContain("(none yet)");
+      expect(recordedRequests[0].state).toContain("(none yet)");
       // Turn 2 saw #1 clean [ok] truncated to <= 500 chars (not full 700-char Z pad)
-      const turn2UserPrompt = recordedRequests[1].messages[1].content;
-      expect(turn2UserPrompt).toContain("#1 clean [ok]:");
-      expect(turn2UserPrompt).not.toContain("Z".repeat(501));
+      const turn2State = recordedRequests[1].state;
+      expect(turn2State).toContain("#1 clean [ok]:");
+      expect(turn2State).not.toContain("Z".repeat(501));
 
       // Verify --init in human-readable text mode
       const initRes = await runCliAsync([
@@ -737,8 +746,8 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
         "--dev",
         "--data",
         dataDir,
-        "--ollama",
-        ollamaUrl,
+        "--jev-url",
+        jevUrl,
       ]);
       expect(initRes.exitCode).toBe(0);
       expect(initRes.stdout).toContain("Flow complete (id: cli-flow-e2e, mode: dev, event: init)");
@@ -769,12 +778,14 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
     }
   });
 
-  test("handles Ollama HTTP 404, invalid router choice, unreachable server, and env overrides", async () => {
+  test("handles Jev HTTP errors, missing API key, invalid choice, unreachable server, and env/flag overrides", async () => {
     let mode = "404";
     let seenModel = null;
+    let seenAuth = null;
     const server = Bun.serve({
       port: 0,
       async fetch(req) {
+        seenAuth = req.headers.get("authorization");
         const body = await req.json();
         seenModel = body.model;
         if (mode === "404") {
@@ -782,20 +793,26 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
         }
         if (mode === "invalid-choice") {
           return Response.json({
-            message: { role: "assistant", content: JSON.stringify({ next: "non-existent-node" }) },
+            model: body.model,
+            answers: {
+              next: { type: "choice", choice: "non-existent-node" },
+            },
           });
         }
         return Response.json({
-          message: { role: "assistant", content: JSON.stringify({ next: "done" }) },
+          model: body.model,
+          answers: {
+            next: { type: "choice", choice: "done" },
+          },
         });
       },
     });
 
-    const ollamaUrl = `http://127.0.0.1:${server.port}`;
+    const jevUrl = `http://127.0.0.1:${server.port}`;
     const htmlFile = writeBlueprint(
-      "err-ollama.html",
+      "err-jev.html",
       `
-      <meta name="bp:id" content="err-ollama">
+      <meta name="bp:id" content="err-jev">
       <script type="blueprint/flow" on="ping">Finish with done.</script>
       <script type="blueprint/js" id="step-a">export default async () => ({ ok: true });</script>
       `
@@ -804,12 +821,12 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
     try {
       const res404 = await runCliAsync(
         ["run", htmlFile, "ping", "--data", dataDir],
-        { BP_OLLAMA_URL: ollamaUrl, BP_ROUTER_MODEL: "custom-model" }
+        { BP_JEV_URL: jevUrl, BP_JEV_MODEL: "custom-model", JEV_API_KEY: "jev-env-key" }
       );
       expect(res404.exitCode).toBe(1);
       expect(seenModel).toBe("custom-model");
+      expect(seenAuth).toBe("Bearer jev-env-key");
       expect(res404.stderr).toContain("HTTP 404");
-      expect(res404.stderr).toContain("ollama pull custom-model");
 
       mode = "invalid-choice";
       const resInvalid = await runCliAsync([
@@ -818,8 +835,8 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
         "ping",
         "--data",
         dataDir,
-        "--ollama",
-        ollamaUrl,
+        "--jev-url",
+        jevUrl,
       ]);
       expect(resInvalid.exitCode).toBe(1);
       expect(resInvalid.stderr).toContain("invalid choice");
@@ -831,26 +848,45 @@ describe("CLI bp run end-to-end with mock Ollama server", () => {
         "ping",
         "--data",
         dataDir,
-        "--ollama",
-        ollamaUrl,
+        "--jev-url",
+        jevUrl,
+        "--jev-key",
+        "jev-flag-key",
       ]);
       expect(resOk.exitCode).toBe(0);
+      expect(seenAuth).toBe("Bearer jev-flag-key");
       expect(resOk.stdout).toContain("Steps: (none)");
+
+      // Non-loopback Jev URL without API key must fail fast before network call
+      const resMissingKey = await runCliAsync(
+        [
+          "run",
+          htmlFile,
+          "ping",
+          "--data",
+          dataDir,
+          "--jev-url",
+          "https://api.typesafe.ai/v1",
+        ],
+        { BP_JEV_API_KEY: "", JEV_API_KEY: "" }
+      );
+      expect(resMissingKey.exitCode).toBe(1);
+      expect(resMissingKey.stderr).toContain("Missing API key for Jev");
     } finally {
       server.stop(true);
     }
 
-    // Now server is stopped -> unreachable Ollama error
+    // Now server is stopped -> unreachable Jev error
     const resUnreachable = await runCliAsync([
       "run",
       htmlFile,
       "ping",
       "--data",
       dataDir,
-      "--ollama",
-      ollamaUrl,
+      "--jev-url",
+      jevUrl,
     ]);
     expect(resUnreachable.exitCode).toBe(1);
-    expect(resUnreachable.stderr).toContain("Failed to connect to Ollama");
+    expect(resUnreachable.stderr).toContain("Failed to connect to Jev");
   });
 });

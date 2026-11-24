@@ -70,7 +70,7 @@ description: 使用声明式 blueprint/* 代码块、bp Daemon/CLI 与 window.bp
 |---|---|---|
 | 典型使用场景 | [`workflows.md`](workflows.md) | 区分打开展示（系统/内置浏览器）与无感调试（`dev` 模式、`ego-lite`/`browser-use` 等 + `bp emit`/`sql`/`logs`）。 |
 | `blueprint/def`（SQLite） | [`def.md`](def.md) | `<script type="blueprint/def">` 声明式 SQLite Schema/初始数据、同步生命周期、安全注意事项、访问边界及 `bp sql`。 |
-| `blueprint/flow`（`sql` / `emit`） | [`flow.md`](flow.md) | `<script type="blueprint/flow">` 基于 `qwen3.5:9b` 的自然语言路由、`<script type="blueprint/sql">` 与 `<script type="blueprint/emit">` 节点、共享 `ctx`、自检规则及离线 `bp run`。 |
+| `blueprint/flow`（`sql` / `emit`） | [`flow.md`](flow.md) | `<script type="blueprint/flow">` 基于 Jev（`jev-1.14`）的自然语言路由、`<script type="blueprint/sql">` 与 `<script type="blueprint/emit">` 节点、共享 `ctx`、自检规则及离线 `bp run`。 |
 | `blueprint/js` | [`js.md`](js.md) | 纯 ES Module 后端动作节点（`export default async (ctx) => ...`）、`ctx` 隔离与异常捕获。 |
 | `blueprint/sh` | [`sh.md`](sh.md) | Shell 脚本动作节点（`stdin` 读取全量 `ctx` JSON、JSON/文本输出归一化与非零退出码错误处理）。 |
 | `blueprint/ai`（`cli="agy"`） | [`ai.md`](ai.md) | 无状态 AI CLI 动作节点、`{ prompt, session?, cwd? }` -> `{ text, session }` 契约、临时对话与 SQLite 续聊模式以及节点 `id` 清晰命名约定。 |

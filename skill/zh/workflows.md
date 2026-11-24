@@ -33,4 +33,4 @@
    - **后台页面验证**：优先使用 `ego-lite`（`ego-browser`）、内置自动化浏览器或 `browser-use` 等**用户无感**的浏览器工具打开 `http://127.0.0.1:7500/bp-dev/<slug>` 检查渲染、控制台报错与交互（具体使用哪种调试浏览器也可与用户商议）。
    - **触发事件**：`bp emit <slug> <event> '<json>' --dev` —— 直接触发后端 `on` Flow，验证数据库变更及界面 `bp.watch` / `bp.on` 实时推送。
    - **检查/修改数据**：`bp sql <slug> "<SQL语句>" --dev` —— 查询入库结果，或手动写入数据验证前端 `bp.watch` 刷新。
-   - **排查日志**：`bp logs <slug> --dev` —— 查看 `qwen3.5:9b` 路由决策、节点执行结果与报错信息（离线单步验证也可用 `bp run <file.html> <event> '<json>' --dev`）。
+   - **排查日志**：`bp logs <slug> --dev` —— 查看 Jev 路由决策、节点执行结果与报错信息（离线单步验证也可用 `bp run <file.html> <event> '<json>' --dev`）。

@@ -70,7 +70,7 @@ Specification and operational skill for single-file `.html` Engineer Blueprints.
 |---|---|---|
 | Typical Workflows | [`workflows.md`](workflows.md) | Distinguish user-facing presentation (system/built-in browser) from non-intrusive `dev` debugging (`ego-lite`/`browser-use` + `bp emit`/`sql`/`logs`). |
 | `blueprint/def` (SQLite) | [`def.md`](def.md) | `<script type="blueprint/def">` declarative SQLite schemas/seeds, reconciliation lifecycle, safety cautions, access boundaries, and `bp sql`. |
-| `blueprint/flow` (`sql` / `emit`) | [`flow.md`](flow.md) | `<script type="blueprint/flow">` natural-language routing via `qwen3.5:9b`, `<script type="blueprint/sql">` & `<script type="blueprint/emit">` nodes, shared `ctx`, self-check rules, and offline `bp run`. |
+| `blueprint/flow` (`sql` / `emit`) | [`flow.md`](flow.md) | `<script type="blueprint/flow">` natural-language routing via Jev (`jev-1.14`), `<script type="blueprint/sql">` & `<script type="blueprint/emit">` nodes, shared `ctx`, self-check rules, and offline `bp run`. |
 | `blueprint/js` | [`js.md`](js.md) | Pure ES module backend action node (`export default async (ctx) => ...`), `ctx` isolation, and error recording. |
 | `blueprint/sh` | [`sh.md`](sh.md) | Shell script backend action node reading full `ctx` JSON on `stdin`, JSON/text stdout normalization, and exit error handling. |
 | `blueprint/ai` (`cli="agy"`) | [`ai.md`](ai.md) | Stateless AI CLI action node, `{ prompt, session?, cwd? }` -> `{ text, session }` contract, temporary vs SQLite session-resume patterns, and unambiguous node IDs. |
