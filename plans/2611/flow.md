@@ -50,7 +50,7 @@
 
 ### 2. Jev 决策路由与 500 字符截断视图
 
-- **结构化决策协议（Jev System One）**：默认调用 `POST ${BP_JEV_URL || "https://api.typesafe.ai/v1"}/systemone`（默认模型 `BP_JEV_MODEL || "jev-1.14"`，鉴权读取 `BP_JEV_API_KEY`、`JEV_API_KEY` 或 `--jev-key`），请求体携带 `model`、`state` 与 `questions.next`（`type: "choice"`，`criteria` 为 `[...nodeIds, "done"]` 及其描述），从 `answers.next.choice` 读取下一步节点。
+- **结构化决策协议（Jev System One）**：默认调用 `POST ${BP_JEV_URL || "https://api.typesafe.ai/v1"}/systemone`（默认模型 `BP_JEV_MODEL || "jev-1.14"`，鉴权读取 `BP_JEV_API_KEY`、`JEV_API_KEY` 或 `--jev-key`），请求体携带 `model`、`state` 与 `questions.next`（`type: "choice"`，`criteria` 为 `[...nodeIds, "done"]` 及其描述）及 `questions.last`（`type: "choice"`，`yes` / `no`）。从 `answers.next.choice` 读取下一步节点；当 `answers.last.choice` 为 `"yes"` 时，执行完所选节点后立即结束，不再发起下一轮决策。`done` 保留，用于需要依据结果判断结束或无事可做的情况。
 - **决策提示视图截断（最大 500 字符）**：传给决策模型的提示词包含四部分：(1) Flow 自然语言指令；(2) 触发事件类型与截断至最多 500 字符的 JSON 序列化 `data`；(3) 按步编号的执行进度摘要（`#1 <node> [ok]: <截断至500字符>` 或 `#1 <node> [error]: <截断至500字符>`，首步为 `(none yet)`）；(4) 各候选节点 `id`（含 `desc`）及 `done`。**决策视图截断仅作用于模型提示词，下游动作节点依然接收完整未截断的 `ctx`。**
 - **循环上限保护（`maxSteps`）**：默认最多执行 `16` 轮决策（可通过 `--max-steps <n>` 调整）。若在上限内仍未选择 `"done"`，立即终止并抛出包含已执行轨迹（`#1 ..., #2 ...`）的明确错误。
 

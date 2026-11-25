@@ -84,7 +84,7 @@ INSERT INTO notes (id, body) VALUES (:id, :body);
 
 ### Jev 决策路由与 500 字符截断
 
-每一轮决策都会通过 Jev System One 的 `choice` 问题从 `[...nodeIds, "done"]` 中选择下一步（读取 `answers.next.choice`）。决策 `state` 包含：
+每一轮决策都会通过 Jev System One 的 `choice` 问题从 `[...nodeIds, "done"]` 中选择下一步（读取 `answers.next.choice`），并同时回答 `questions.last`（`yes` / `no`）：为 `yes` 时执行完所选节点立即结束，不再发起下一轮决策（`done` 保留，用于需要依据结果判断结束或无事可做的情况）。决策 `state` 包含：
 
 1. Flow 自然语言指令正文；
 2. 触发事件 `type` 与 JSON 序列化后**截断至最多 500 字符**的 `data`；

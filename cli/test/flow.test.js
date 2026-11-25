@@ -889,4 +889,82 @@ describe("CLI bp run end-to-end with mock Jev server", () => {
     expect(resUnreachable.exitCode).toBe(1);
     expect(resUnreachable.stderr).toContain("Failed to connect to Jev");
   });
+
+  test("last: true finishes flow immediately after single node without extra decision turn", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bp-flow-last-ok-"));
+    const dataDir = path.join(dir, "data");
+    const htmlFile = path.join(dir, "last-ok.html");
+
+    try {
+      fs.writeFileSync(
+        htmlFile,
+        `<!DOCTYPE html><html><head>
+          <meta name="bp:id" content="last-ok" />
+          <script type="blueprint/def">CREATE TABLE t (id TEXT PRIMARY KEY);</script>
+          <script type="blueprint/flow" on="ping">Run step-one and finish.</script>
+          <script type="blueprint/js" id="step-one">
+            export default async (ctx) => ({ echoed: ctx.event.data?.msg ?? null });
+          </script>
+        </head></html>`
+      );
+
+      let decideCalls = 0;
+      const res = await runBlueprintFlow({
+        filePath: htmlFile,
+        event: "ping",
+        data: { msg: "hi" },
+        dev: true,
+        dataDir,
+        decide: () => {
+          decideCalls++;
+          return { next: "step-one", last: true };
+        },
+      });
+
+      expect(decideCalls).toBe(1);
+      expect(res.steps).toHaveLength(1);
+      expect(res.steps[0]).toMatchObject({ step: 1, node: "step-one", ok: true, output: { echoed: "hi" } });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("last: true still finishes flow immediately even when the chosen node throws", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bp-flow-last-err-"));
+    const dataDir = path.join(dir, "data");
+    const htmlFile = path.join(dir, "last-err.html");
+
+    try {
+      fs.writeFileSync(
+        htmlFile,
+        `<!DOCTYPE html><html><head>
+          <meta name="bp:id" content="last-err" />
+          <script type="blueprint/def">CREATE TABLE t (id TEXT PRIMARY KEY);</script>
+          <script type="blueprint/flow" on="ping">Run fail-node and finish.</script>
+          <script type="blueprint/js" id="fail-node">
+            export default async () => { throw new Error("boom"); };
+          </script>
+        </head></html>`
+      );
+
+      let decideCalls = 0;
+      const res = await runBlueprintFlow({
+        filePath: htmlFile,
+        event: "ping",
+        data: {},
+        dev: true,
+        dataDir,
+        decide: () => {
+          decideCalls++;
+          return { next: "fail-node", last: true };
+        },
+      });
+
+      expect(decideCalls).toBe(1);
+      expect(res.steps).toHaveLength(1);
+      expect(res.steps[0]).toMatchObject({ step: 1, node: "fail-node", ok: false, error: "boom" });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

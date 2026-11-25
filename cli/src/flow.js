@@ -88,6 +88,7 @@ export function buildDecisionInput({ step, flow, ctx, nodes, choices, jevModel, 
   const choiceLines = [
     ...nodes.map((n) => (n.desc ? `- ${n.id}: ${n.desc}` : `- ${n.id}`)),
     "- done: Flow is complete, stop",
+    "- last (yes/no): Whether to end the flow immediately after executing the chosen node regardless of its result",
   ].join("\n");
 
   const state = [
@@ -115,8 +116,17 @@ export function buildDecisionInput({ step, flow, ctx, nodes, choices, jevModel, 
     next: {
       type: "choice",
       instructions:
-        'Choose the single next action node ID to execute based on the flow instructions, trigger event, and execution progress, or choose "done" when the flow is complete.',
+        'Choose the single next action node ID to execute based on the flow instructions, trigger event, and execution progress, or choose "done" when the flow is complete. Use "done" only when the flow is already complete.',
       criteria,
+    },
+    last: {
+      type: "choice",
+      instructions:
+        'Answer "yes" if, according to the flow instructions, the flow should end right after executing the chosen node regardless of its result (so no further decision is needed); answer "no" if what happens next depends on that node\'s result, or if "done" was chosen.',
+      criteria: {
+        yes: "End the flow immediately after executing the chosen node",
+        no: "Decide again after seeing the chosen node's result",
+      },
     },
   };
 
@@ -252,7 +262,11 @@ export function createJevDecider({
       );
     }
 
-    return next;
+    const lastAnswer = payload?.answers?.last;
+    const lastChoice = typeof lastAnswer === "string" ? lastAnswer : lastAnswer?.choice;
+    const last = lastChoice === "yes";
+
+    return { next, last };
   };
 }
 
@@ -477,6 +491,7 @@ export async function executeFlows({
 
         const rawChoice = await decideFn(decisionInput);
         const nextChoice = typeof rawChoice === "string" ? rawChoice : rawChoice?.next;
+        const lastFlag = typeof rawChoice === "object" && rawChoice !== null && rawChoice.last === true;
         if (typeof nextChoice !== "string" || !choices.includes(nextChoice)) {
           throw new Error(
             `Invalid decision "${String(nextChoice)}" at step ${step}: expected one of [${choices.join(", ")}].`
@@ -521,6 +536,11 @@ export async function executeFlows({
         for (let idx = emitCountBefore; idx < emittedEvents.length; idx++) {
           const ev = emittedEvents[idx];
           await hooks.onEmit?.({ flow, event: ev.event, data: ev.data });
+        }
+
+        if (lastFlag) {
+          completed = true;
+          break;
         }
       }
 

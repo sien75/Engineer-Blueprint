@@ -83,7 +83,7 @@ Every downstream action node receives a fresh clone of the full, untruncated `ct
 
 ### Decision Loop (Jev) & 500-Char Truncation
 
-At each turn, Jev selects the next node `id` or `"done"` via a System One `choice` question (`answers.next.choice`). The decision `state` contains:
+At each turn, Jev selects the next node `id` or `"done"` via `questions.next` (`answers.next.choice`), and simultaneously answers `questions.last` (`yes` / `no`): when `"yes"`, the flow ends immediately after executing the chosen node without another decision round (`"done"` is kept for cases where ending depends on the node's result or nothing needs to run). The decision `state` contains:
 
 1. The flow's natural-language instructions.
 2. Trigger event `type` and JSON-serialized `data` **truncated to at most 500 characters**.
