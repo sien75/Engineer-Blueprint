@@ -8,7 +8,7 @@
 
 - **`bun` 与 `sqlite`**：用于运行 `bp` CLI、Daemon 与本地 SQLite 持久化存储。
 - **Jev 决策模型（默认 `https://api.typesafe.ai/v1/systemone`，模型 `jev-1.14`）**：用于执行自然语言流程决策路由（需配置 `BP_JEV_API_KEY` 或 `JEV_API_KEY`；可通过 `--jev-url` / `BP_JEV_URL`、`--jev-model` / `BP_JEV_MODEL` 与 `--jev-key` 覆盖）。
-- **`agy` CLI（可选）**：运行 `<script type="blueprint/ai" cli="agy">` 节点时需要。
+- **兼容 ACP 的 AI CLI（可选）**：运行 `<script type="blueprint/ai" protocol="acp" cli="...">` 节点时需要（内置预设：`agy`、`opencode`、`dsh`、`claude`、`codex`，也支持任意自定义 ACP stdio 命令）。
 
 ## 安装
 

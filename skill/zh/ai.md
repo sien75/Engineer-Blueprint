@@ -2,20 +2,28 @@
 
 [English](../ai.md) · [技能首页](README.md) · [Def 模块](def.md) · [Flow 模块](flow.md) · [JS 模块](js.md) · [SH 模块](sh.md) · [Daemon 模块](daemon.md)
 
-本指南规定如何在 `<script type="blueprint/flow">` 工作流中编写与调度无状态的 AI CLI 动作节点（`<script type="blueprint/ai">`）。
+本指南规定如何在 `<script type="blueprint/flow">` 工作流中基于标准 **ACP（Agent Client Protocol，JSON-RPC 2.0 over stdio）** 编写与调度无状态 AI CLI 动作节点（`<script type="blueprint/ai">`）。
 
 ## 1. 声明语法
 
 ```html
-<script type="blueprint/ai" id="coder" cli="agy" model="claude-sonnet" mode="auto" desc="负责代码分析与修改">
+<script type="blueprint/ai" id="coder" protocol="acp" cli="agy" model="claude-sonnet" mode="auto" desc="负责代码分析与修改">
 你是一位严谨的工程助手，只基于仓库现状给出清晰结论。
 </script>
 ```
 
 - **`id`**（必填）：在当前文档全部后端动作节点中唯一（禁止使用 `"done"`）。
-- **`cli`**（必填）：底层 CLI adapter 名称。一期仅支持 `"agy"`；缺失或未知的 `cli` 值会在解析阶段报错。
-- **`model`**（可选）：透传为 `--model <model>`。
-- **`mode`**（可选）：透传为 `--mode <mode>`。
+- **`protocol`**（可选，默认 `"acp"`）：底层通信协议。当前支持 `"acp"`（大小写不敏感，省略或为空时默认 `"acp"`）。
+- **`cli`**（必填）：ACP CLI 预设名或自定义启动命令：
+  - 内置预设（不区分大小写）：
+    - `"agy"` → `agy acp`（支持 `BP_AGY_BIN` 环境变量覆盖）
+    - `"opencode"` → `opencode acp`（支持 `BP_OPENCODE_BIN` 覆盖）
+    - `"dsh"` → `dsh acp`（支持 `BP_DSH_BIN` 覆盖）
+    - `"claude"` → `npx -y @agentclientprotocol/claude-agent-acp`
+    - `"codex"` → `npx -y @zed-industries/codex-acp`
+  - 自定义命令：任意其他非空命令字符串（支持单/双引号参数与路径解析，例如 `./bin/my-agent --acp`）。
+- **`model`**（可选）：通过 ACP `session/set_model`（若不支持则回退 `session/set_config_option`）设置。
+- **`mode`**（可选）：通过 ACP `session/set_mode`（若不支持则回退 `session/set_config_option`）设置。
 - **`desc`**（可选）：节点职责描述，供 Flow 路由模型参考。
 - **角色提示词正文**（可选）：脚本正文（会先将 `<\/script>` 还原为 `</script>` 并去除首尾空白）。**仅在新开会话时**以 `\n\n` 拼接在输入 `prompt` 前面；传入 `session` 续聊时不重复拼接。
 
@@ -27,22 +35,23 @@
 // 输入
 {
   prompt: string;   // 必填：非空提示词文本
-  session?: string; // 可选：缺失、null 或纯空白时新开会话；非空字符串时通过 --conversation 续聊
+  session?: string; // 可选：缺失、null 或纯空白时新开会话；非空字符串时通过 ACP session/load 续聊
   cwd?: string;     // 可选：执行工作目录，默认为当前工作目录 process.cwd()
 }
 
 // 输出（写入 ctx.last.output）
 {
-  text: string;     // AI 本轮响应文本
-  session: string;  // 本轮创建或延续的会话 ID
+  text: string;     // 从本轮 ACP agent_message_chunk 流式通知汇总的响应文本
+  session: string;  // 本轮创建或延续的 ACP sessionId
 }
 ```
 
-- **CLI 执行方式（`cli="agy"`）**：
-  - **新开会话**（无 `session`）：在 `cwd` 下执行 `agy -p <fullPrompt> --output-format json`（如设置 `model`/`mode` 则附带 `--model`/`--mode`），其中 `fullPrompt` 为 `rolePrompt + "\n\n" + prompt`（`rolePrompt` 为空时仅传 `prompt`）。
-  - **延续会话**（`session` 非空）：在 `cwd` 下执行 `agy -p <prompt> --conversation <session> --output-format json`（如设置 `model`/`mode` 则附带 `--model`/`--mode`），不重复拼接 `rolePrompt`。
-- **输出归一化**：解析 JSON 标准输出并归一化为 `{ text, session }`（`text` 兼容 `text` / `result` / `response` / `content`；`session` 兼容 `conversation` / `conversation_id` / `conversationId` / `session` / `session_id` / `sessionId`）。
-- **错误处理**：缺少非空 `prompt`、子进程退出码非零、JSON 解析失败或缺少响应文本字段时，均会抛出异常并由 Flow 循环捕获写入 `ctx.history`（`ok: false`），供后续路由走失败兜底或 `done`。
+- **ACP 协议执行流程（JSON-RPC 2.0 over stdio）**：
+  - 在 `cwd` 下启动解析后的 ACP 命令，发送 `initialize`（`protocolVersion: 1`）。
+  - **新开会话**（无 `session`）：调用 `session/new`（`{ cwd, mcpServers: [] }`）获取 `sessionId`，并将 `fullPrompt`（`rolePrompt + "\n\n" + prompt`，`rolePrompt` 为空时仅传 `prompt`）发送给 `session/prompt`。
+  - **延续会话**（`session` 非空）：调用 `session/load`（若返回 `-32601` 则回退 `session/resume`），加载阶段忽略历史回放消息块，随后仅传 `prompt` 调用 `session/prompt`（不重复拼接 `rolePrompt`）。
+  - **模型/模式与权限**：按需设置 `model`/`mode`，遇到 `session/request_permission` 请求时自动选择允许选项（`allow_once` / `allow_always` / 首个选项），并汇总本轮 `agent_message_chunk` 文本。
+- **错误处理**：缺少非空 `prompt`、子进程启动失败或非零退出、JSON 解析失败或 JSON-RPC 返回错误时，均会抛出异常并由 Flow 循环捕获写入 `ctx.history`（`ok: false`），供后续路由走失败兜底或 `done`。
 
 ## 3. 两种典型用法
 
@@ -56,7 +65,7 @@
 2. 成功则执行 emit-reply，失败则执行 emit-error，最后选择 done 结束。
 </script>
 
-<script type="blueprint/ai" id="quick-ai" cli="agy" desc="单轮问答助手">
+<script type="blueprint/ai" id="quick-ai" protocol="acp" cli="agy" desc="单轮问答助手">
 请直接给出简洁准确的回答。
 </script>
 
@@ -96,7 +105,7 @@ export default async (ctx) => ({
 });
 </script>
 
-<script type="blueprint/ai" id="chat" cli="agy" desc="新开或延续指定线程对话">
+<script type="blueprint/ai" id="chat" protocol="acp" cli="agy" desc="新开或延续指定线程对话">
 你是项目协助助手，请结合上下文直接作答。
 </script>
 

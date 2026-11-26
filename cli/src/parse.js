@@ -9,7 +9,7 @@ const ACTION_NODE_TYPES = new Set([
   "blueprint/emit",
   "blueprint/ai",
 ]);
-const SUPPORTED_AI_CLIS = new Set(["agy"]);
+const SUPPORTED_AI_PROTOCOLS = new Set(["acp"]);
 
 /**
  * Validate a blueprint ID against the spec pattern.
@@ -116,16 +116,18 @@ function parseActionNode(scriptType, attrs, rawBody, seenNodeIds) {
   }
 
   if (scriptType === "blueprint/ai") {
-    const rawCli = Object.hasOwn(attrs, "cli") ? attrs.cli.trim() : "";
-    if (!rawCli) {
+    const rawProtocol = Object.hasOwn(attrs, "protocol") ? attrs.protocol.trim() : "";
+    const protocol = rawProtocol ? rawProtocol.toLowerCase() : "acp";
+    if (!SUPPORTED_AI_PROTOCOLS.has(protocol)) {
       throw new Error(
-        `Action node <script type="blueprint/ai" id="${rawId}"> requires a non-empty "cli" attribute (supported: ${[...SUPPORTED_AI_CLIS].join(", ")}).`
+        `Unsupported protocol "${rawProtocol}" on action node <script type="blueprint/ai" id="${rawId}">. Supported protocols: ${[...SUPPORTED_AI_PROTOCOLS].join(", ")}.`
       );
     }
-    const cli = rawCli.toLowerCase();
-    if (!SUPPORTED_AI_CLIS.has(cli)) {
+
+    const cli = Object.hasOwn(attrs, "cli") ? attrs.cli.trim() : "";
+    if (!cli) {
       throw new Error(
-        `Unsupported cli "${rawCli}" on action node <script type="blueprint/ai" id="${rawId}">. Supported v1 CLI adapters: ${[...SUPPORTED_AI_CLIS].join(", ")}.`
+        `Action node <script type="blueprint/ai" id="${rawId}"> requires a non-empty "cli" attribute.`
       );
     }
 
@@ -140,6 +142,7 @@ function parseActionNode(scriptType, attrs, rawBody, seenNodeIds) {
       type: scriptType,
       kind: "ai",
       desc,
+      protocol,
       cli,
       model,
       mode,

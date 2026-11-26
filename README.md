@@ -8,7 +8,7 @@
 
 - **`bun`** and **`sqlite`** — Required to run the `bp` CLI, daemon, and local SQLite persistence.
 - **Jev Decision Model (`jev-1.14` via `https://api.typesafe.ai/v1/systemone`)** — Required for running natural-language flow decision routing (configure `BP_JEV_API_KEY` or `JEV_API_KEY`; override with `--jev-url` / `BP_JEV_URL`, `--jev-model` / `BP_JEV_MODEL`, and `--jev-key`).
-- **`agy` CLI (optional)** — Required when executing `<script type="blueprint/ai" cli="agy">` nodes.
+- **ACP-compatible AI CLI (optional)** — Required when executing `<script type="blueprint/ai" protocol="acp" cli="...">` nodes (built-in presets: `agy`, `opencode`, `dsh`, `claude`, `codex`, or any custom ACP stdio command).
 
 ## Installation
 

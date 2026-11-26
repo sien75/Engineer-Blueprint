@@ -38,7 +38,7 @@ description: 使用声明式 blueprint/* 代码块、bp Daemon/CLI 与 window.bp
     <script type="blueprint/sql" id="save-note">
       /* 绑定 ctx.last.output 或 ctx.event.data 的 SQL 动作节点 */
     </script>
-    <script type="blueprint/ai" id="summarize" cli="agy">
+    <script type="blueprint/ai" id="summarize" protocol="acp" cli="agy">
       /* 可选角色提示词，仅在新开会话时拼接在 prompt 前 */
     </script>
     <script type="blueprint/emit" id="notify" event="note:saved"></script>
@@ -73,5 +73,5 @@ description: 使用声明式 blueprint/* 代码块、bp Daemon/CLI 与 window.bp
 | `blueprint/flow`（`sql` / `emit`） | [`flow.md`](flow.md) | `<script type="blueprint/flow">` 基于 Jev（`jev-1.14`）的自然语言路由、`<script type="blueprint/sql">` 与 `<script type="blueprint/emit">` 节点、共享 `ctx`、自检规则及离线 `bp run`。 |
 | `blueprint/js` | [`js.md`](js.md) | 纯 ES Module 后端动作节点（`export default async (ctx) => ...`）、`ctx` 隔离与异常捕获。 |
 | `blueprint/sh` | [`sh.md`](sh.md) | Shell 脚本动作节点（`stdin` 读取全量 `ctx` JSON、JSON/文本输出归一化与非零退出码错误处理）。 |
-| `blueprint/ai`（`cli="agy"`） | [`ai.md`](ai.md) | 无状态 AI CLI 动作节点、`{ prompt, session?, cwd? }` -> `{ text, session }` 契约、临时对话与 SQLite 续聊模式以及节点 `id` 清晰命名约定。 |
+| `blueprint/ai`（`protocol="acp"`） | [`ai.md`](ai.md) | 基于标准 ACP 的无状态 AI CLI 动作节点（内置预设与自定义命令）、`{ prompt, session?, cwd? }` -> `{ text, session }` 契约、临时对话与 SQLite 续聊模式以及节点 `id` 清晰命名约定。 |
 | Daemon 与 `window.bp` | [`daemon.md`](daemon.md) | `bp up`、`bp down`、`bp reload`、`bp emit`、`bp logs`、`127.0.0.1:7500` 概览页、`/bp/<slug>` 与 `/bp-dev/<slug>`、`every` 定时调度、自动刷新与前端 `window.bp` 接口。 |

@@ -1,6 +1,6 @@
 # Engineer Blueprint AI 节点设计（`blueprint/ai`）
 
-> **定位说明**：`<script type="blueprint/ai">` 是 Flow 可调度的 AI 执行节点，定位为无状态执行器——节点自身不维护会话状态、历史记录或持久化存储；会话 ID 由蓝图自己的 SQLite 表（`blueprint/def` + `blueprint/sql`）按需读写。一期接入 `agy` CLI，内部保留按 `cli` 属性分发的 adapter 扩展点。
+> **定位说明**：`<script type="blueprint/ai">` 是 Flow 可调度的 AI 执行节点，定位为无状态执行器——节点自身不维护会话状态、历史记录或持久化存储；会话 ID 由蓝图自己的 SQLite 表（`blueprint/def` + `blueprint/sql`）按需读写。通过标准 **ACP（Agent Client Protocol，JSON-RPC 2.0 over stdio）** 接入各类兼容的 AI CLI。
 
 ---
 
@@ -9,17 +9,24 @@
 在蓝图 `.html` 文件中通过 `<script type="blueprint/ai">` 声明一个可被 Flow 调度的 AI 节点：
 
 ```html
-<script type="blueprint/ai" id="coder" cli="agy" model="claude-sonnet" mode="auto" desc="负责代码分析与修改">
+<script type="blueprint/ai" id="coder" protocol="acp" cli="agy" model="claude-sonnet" mode="auto" desc="负责代码分析与修改">
 你是一位严谨的工程助手，只基于仓库现状给出清晰结论。
 </script>
 ```
 
 - **`id`**（必填）：节点唯一标识，自动加入 `flow` 的可调度选项列表。
-- **`cli`**（必填，一期为 `"agy"`）：指定底层执行的 CLI adapter，用于运行时分发。
-- **`model`**（可选）：透传给底层 CLI 的模型参数（如 `--model <model>`）。
-- **`mode`**（可选）：透传给底层 CLI 的执行模式（如 `--mode <mode>`）。
+- **`protocol`**（可选，默认 `"acp"`）：底层通信协议。当前仅支持 `"acp"`（大小写不敏感，未填写时默认 `"acp"`）。
+- **`cli`**（必填）：ACP CLI 预设名或自定义启动命令。内置预设（不区分大小写）：
+  - `"agy"` → `agy acp`（支持 `BP_AGY_BIN` 覆盖二进制路径）
+  - `"opencode"` → `opencode acp`（支持 `BP_OPENCODE_BIN` 覆盖）
+  - `"dsh"` → `dsh acp`（支持 `BP_DSH_BIN` 覆盖）
+  - `"claude"` → `npx -y @agentclientprotocol/claude-agent-acp`
+  - `"codex"` → `npx -y @zed-industries/codex-acp`
+  - 其他非空字符串按命令拆分（支持单/双引号参数与路径解析），可直接指定任意自定义 ACP 二进制或适配器命令。
+- **`model`**（可选）：通过 ACP `session/set_model`（若不支持则回退 `session/set_config_option`）设置模型。
+- **`mode`**（可选）：通过 ACP `session/set_mode`（若不支持则回退 `session/set_config_option`）设置执行模式。
 - **`desc`**（可选）：节点职责描述，供决策模型参考。
-- **节点正文**（可选）：角色提示词。**仅在新开会话时**拼接在输入 `prompt` 前面；续聊时 `agy` 已有上下文，不重复拼接。若正文内包含 `</script>`，按 HTML 规范转义为 `<\/script>` 并在解析时还原。
+- **节点正文**（可选）：角色提示词。**仅在新开会话时**拼接在输入 `prompt` 前面；续聊时会话已有上下文，不重复拼接。若正文内包含 `</script>`，按 HTML 规范转义为 `<\/script>` 并在解析时还原。
 
 ---
 
@@ -72,7 +79,7 @@ ctx.event.data { prompt } ─▶ blueprint/ai ─▶ 下游消费 :text（不落
 ```
 blueprint/sql（查库取旧 session）
   ─▶ blueprint/js（组装 { prompt, session }）
-  ─▶ blueprint/ai（调用 agy 续聊或首次新开，输出 { text, session }）
+  ─▶ blueprint/ai（通过 ACP 续聊或首次新开，输出 { text, session }）
   ─▶ blueprint/sql（将新 :session 与 :text 写回表里）
 ```
 
@@ -99,7 +106,7 @@ export default (ctx) => ({
 });
 </script>
 
-<script type="blueprint/ai" id="chat" cli="agy" desc="延续指定线程与用户对话">
+<script type="blueprint/ai" id="chat" protocol="acp" cli="agy" desc="延续指定线程与用户对话">
 你是项目协助助手，请结合上下文直接作答。
 </script>
 
@@ -114,27 +121,30 @@ WHERE id = :thread_id;
 
 ---
 
-## 四、CLI 一期实现策略（`agy` 适配层）
+## 四、ACP 协议实现策略（JSON-RPC 2.0 over stdio）
 
-### 1. 命令调用规则
+### 1. 握手与会话生命周期
 
-在 `cwd`（缺省为当前目录）下执行 `agy` 子进程，统一开启非交互 JSON 输出：
+在 `cwd`（缺省为当前目录）下启动 `resolveAcpCommand(cli)` 解析出的子进程，通过 stdin/stdout NDJSON 执行标准 ACP 流程：
 
-- **无 `session`（新开会话）**：
-  - 执行 `agy -p --output-format json`（若配置了 `model` / `mode`，透传 `--model` / `--mode`）。
-  - 将节点正文角色提示词与输入 `prompt` 拼接后传入（正文为空时仅传 `prompt`）。
-- **有 `session`（续聊）**：
-  - 执行 `agy -p --conversation <session> --output-format json`（若配置了 `model` / `mode`，透传 `--model` / `--mode`）。
-  - 仅传入 `prompt`，不重复拼接节点正文角色提示词。
+1. 发送 `initialize`（`protocolVersion: 1`）完成能力协商。
+2. **无 `session`（新开会话）**：
+   - 调用 `session/new`（`{ cwd, mcpServers: [] }`）获取 `sessionId`。
+   - 将节点正文角色提示词与输入 `prompt` 拼接后传入（正文为空时仅传 `prompt`）。
+3. **有 `session`（续聊）**：
+   - 调用 `session/load`（`{ sessionId, cwd, mcpServers: [] }`；若服务端返回 `-32601`，回退 `session/resume`）。
+   - 加载阶段忽略历史回放的 `agent_message_chunk` 通知，仅传入 `prompt`（不重复拼接角色提示词）。
+4. 若节点配置了 `model` / `mode`，依次调用 `session/set_model` / `session/set_mode`（若返回 `-32601` 则回退 `session/set_config_option`）。
+5. 调用 `session/prompt` 并收集本轮流式 `session/update` 中的 `agent_message_chunk` 文本片段，遇到 `session/request_permission` 请求时自动选择允许选项以免阻塞。
 
 ### 2. 输出解析与错误处理
 
-- 解析 `agy` 的 JSON 输出并归一化为 `{ text, session }`。
-- 当 CLI 返回非零退出码、JSON 解析失败或结果缺少必需字段时，按 Flow 通用节点错误处理写入 `ctx.history`，供后续分支判断或 `done` 节点收口处理。
+- 拼接本轮收集的文本块并返回 `{ text, session }`。
+- 当子进程启动失败、非零退出、JSON 解析失败、JSON-RPC 返回错误或缺少必需字段时，按 Flow 通用节点错误处理写入 `ctx.history`，供后续分支判断或 `done` 节点收口处理。
 
-### 3. Adapter 扩展点
+### 3. 协议扩展点
 
-执行器内部保留按节点 `cli` 属性分发的 adapter 路由层（一期内置 `agy`）：
+执行器内部保留按节点 `protocol` 属性分发的协议路由层（当前内置 `acp`）：
 
-- 后续新增 `codex`、`claude` 等 CLI 时，只需实现对应 adapter 并将命令执行结果归一化为 `{ text, session }`；
+- 通过 `protocol="acp"` 可直接使用所有内置预设 CLI 及任意自定义 ACP stdio 命令；
 - HTML 侧 `<script type="blueprint/ai">` 的写法与上下游统一契约保持不变。

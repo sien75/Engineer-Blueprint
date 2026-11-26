@@ -38,7 +38,7 @@ Backend action nodes declare executable steps inside the `.html` file. Every act
 
 - **`blueprint/js`**: Pure ES module (`export default async (ctx) => ...`) — see [`js.md`](js.md).
 - **`blueprint/sh`**: Shell script executed with full `ctx` JSON on `stdin` — see [`sh.md`](sh.md).
-- **`blueprint/ai`**: Stateless AI CLI adapter (`cli="agy"`) — see [`ai.md`](ai.md).
+- **`blueprint/ai`**: Stateless ACP AI CLI adapter (`protocol="acp"`, `cli="..."`) — see [`ai.md`](ai.md).
 - **`blueprint/sql`** & **`blueprint/emit`**: Specified directly below.
 
 ### `blueprint/sql`

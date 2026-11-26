@@ -38,7 +38,7 @@ Specification and operational skill for single-file `.html` Engineer Blueprints.
     <script type="blueprint/sql" id="save-note">
       /* SQL action node bound to ctx.last.output or ctx.event.data */
     </script>
-    <script type="blueprint/ai" id="summarize" cli="agy">
+    <script type="blueprint/ai" id="summarize" protocol="acp" cli="agy">
       /* Optional role prompt prepended only on a new session */
     </script>
     <script type="blueprint/emit" id="notify" event="note:saved"></script>
@@ -73,5 +73,5 @@ Specification and operational skill for single-file `.html` Engineer Blueprints.
 | `blueprint/flow` (`sql` / `emit`) | [`flow.md`](flow.md) | `<script type="blueprint/flow">` natural-language routing via Jev (`jev-1.14`), `<script type="blueprint/sql">` & `<script type="blueprint/emit">` nodes, shared `ctx`, self-check rules, and offline `bp run`. |
 | `blueprint/js` | [`js.md`](js.md) | Pure ES module backend action node (`export default async (ctx) => ...`), `ctx` isolation, and error recording. |
 | `blueprint/sh` | [`sh.md`](sh.md) | Shell script backend action node reading full `ctx` JSON on `stdin`, JSON/text stdout normalization, and exit error handling. |
-| `blueprint/ai` (`cli="agy"`) | [`ai.md`](ai.md) | Stateless AI CLI action node, `{ prompt, session?, cwd? }` -> `{ text, session }` contract, temporary vs SQLite session-resume patterns, and unambiguous node IDs. |
+| `blueprint/ai` (`protocol="acp"`) | [`ai.md`](ai.md) | Stateless ACP AI CLI action node (built-in presets + custom commands), `{ prompt, session?, cwd? }` -> `{ text, session }` contract, temporary vs SQLite session-resume patterns, and unambiguous node IDs. |
 | Daemon & `window.bp` | [`daemon.md`](daemon.md) | `bp up`, `bp down`, `bp reload`, `bp emit`, `bp logs`, `127.0.0.1:7500` overview, `/bp/<slug>` vs `/bp-dev/<slug>`, `every` scheduling, auto-reload, and frontend `window.bp` WebSocket API. |

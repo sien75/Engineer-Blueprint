@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { runBlueprintSql } from "../src/db.js";
 import { runBlueprintFlow } from "../src/flow.js";
 import { parseBlueprintHtml } from "../src/parse.js";
+import { resolveAcpCommand } from "../src/ai.js";
 
 const CLI_BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../bin/bp.js");
 
@@ -35,7 +36,7 @@ function writeBlueprint(filename, html) {
   return filePath;
 }
 
-function createMockAgy(filename = "mock-agy.js") {
+function createMockAcpServer(filename = "mock-acp.js") {
   const logPath = path.join(tmpDir, `${filename}.calls.jsonl`);
   const scriptPath = path.join(tmpDir, filename);
   const script = `#!/usr/bin/env bun
@@ -43,44 +44,189 @@ import fs from "node:fs";
 
 const argv = process.argv.slice(2);
 const cwd = fs.realpathSync(process.cwd());
-const entry = { argv, cwd, envKeys: Object.keys(process.env) };
-fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(entry) + "\\n");
+const logFile = ${JSON.stringify(logPath)};
+function logEntry(entry) {
+  fs.appendFileSync(logFile, JSON.stringify(entry) + "\\n");
+}
+logEntry({ type: "spawn", argv, cwd });
 
-function readFlag(name) {
-  const idx = argv.indexOf(name);
-  return idx !== -1 && idx + 1 < argv.length ? argv[idx + 1] : null;
-}
-
-const prompt = readFlag("-p") ?? "";
-const conversation = readFlag("--conversation");
-const model = readFlag("--model");
-const mode = readFlag("--mode");
-
-if (prompt.includes("__FAIL_EXIT__")) {
-  console.error("mock agy simulated failure");
-  process.exit(2);
-}
-if (prompt.includes("__BAD_JSON__")) {
-  console.log("not valid json {{{");
-  process.exit(0);
-}
-if (prompt.includes("__MISSING_TEXT__")) {
-  console.log(JSON.stringify({ session: "s-only" }));
-  process.exit(0);
-}
-if (prompt.includes("__ALT_KEYS__")) {
-  console.log(JSON.stringify({ response: "alt-reply", conversation_id: "conv-alt-99" }));
-  process.exit(0);
+function send(obj) {
+  process.stdout.write(JSON.stringify(obj) + "\\n");
 }
 
-const turn = fs.readFileSync(${JSON.stringify(logPath)}, "utf8").trim().split("\\n").length;
-const nextSession = conversation ? \`\${conversation}-next-\${turn}\` : \`sess-\${turn}\`;
-console.log(
-  JSON.stringify({
-    result: \`reply#\${turn}:conv=\${conversation ?? "new"}:model=\${model ?? "none"}:mode=\${mode ?? "none"}:prompt=\${prompt}\`,
-    session_id: nextSession,
-  })
-);
+let state = {
+  model: null,
+  mode: null,
+  sessionCounter: 0,
+  pendingPermResolve: null,
+};
+
+const decoder = new TextDecoder();
+let buffer = "";
+
+async function handleLine(line) {
+  const msg = JSON.parse(line);
+  logEntry({ type: "recv", msg });
+
+  // Response to server-initiated request (e.g., session/request_permission)
+  if (msg.id !== undefined && !msg.method) {
+    if (state.pendingPermResolve) {
+      const resolve = state.pendingPermResolve;
+      state.pendingPermResolve = null;
+      resolve(msg);
+    }
+    return;
+  }
+
+  const { id, method, params } = msg;
+  if (method === "initialize") {
+    send({
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion: 1,
+        agentInfo: { name: "mock-acp", version: "1.0.0" },
+      },
+    });
+    return;
+  }
+
+  if (method === "session/new") {
+    state.sessionCounter += 1;
+    send({
+      jsonrpc: "2.0",
+      id,
+      result: { sessionId: \`sess-\${state.sessionCounter}\` },
+    });
+    return;
+  }
+
+  if (method === "session/load") {
+    // Replay historical chunks that MUST be ignored by the client
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "[REPLAYED_HISTORY_MUST_IGNORE]" },
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      id,
+      result: { sessionId: params.sessionId },
+    });
+    return;
+  }
+
+  if (method === "session/set_model") {
+    state.model = params.modelId;
+    send({ jsonrpc: "2.0", id, result: {} });
+    return;
+  }
+
+  if (method === "session/set_mode") {
+    state.mode = params.modeId;
+    send({ jsonrpc: "2.0", id, result: {} });
+    return;
+  }
+
+  if (method === "session/prompt") {
+    const promptText = params?.prompt?.[0]?.text ?? "";
+
+    if (promptText.includes("__FAIL_EXIT__")) {
+      console.error("mock acp simulated failure");
+      process.exit(2);
+    }
+    if (promptText.includes("__BAD_JSON__")) {
+      process.stdout.write("not valid json {{{\\n");
+      return;
+    }
+    if (promptText.includes("__RPC_ERROR__")) {
+      send({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32000, message: "simulated rpc error" },
+      });
+      return;
+    }
+
+    let permInfo = "";
+    if (promptText.includes("__PERMISSION__")) {
+      const permResp = await new Promise((resolve) => {
+        state.pendingPermResolve = resolve;
+        send({
+          jsonrpc: "2.0",
+          id: 9001,
+          method: "session/request_permission",
+          params: {
+            sessionId: params.sessionId,
+            options: [
+              { optionId: "deny-1", kind: "reject_once", name: "Deny" },
+              { optionId: "allow-1", kind: "allow_once", name: "Allow once" },
+            ],
+          },
+        });
+      });
+      permInfo = \`:perm=\${permResp?.result?.outcome?.optionId ?? "none"}\`;
+    }
+
+    const fullReply = \`reply:sess=\${params.sessionId}:model=\${state.model ?? "none"}:mode=\${state.mode ?? "none"}\${permInfo}:prompt=\${promptText}\`;
+    const mid = Math.floor(fullReply.length / 2);
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: fullReply.slice(0, mid) },
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: fullReply.slice(mid) },
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      id,
+      result: { stopReason: "end_turn" },
+    });
+    return;
+  }
+
+  send({
+    jsonrpc: "2.0",
+    id,
+    error: { code: -32601, message: \`Unknown method: \${method}\` },
+  });
+}
+
+for await (const chunk of Bun.stdin.stream()) {
+  buffer += decoder.decode(chunk, { stream: true });
+  let idx;
+  while ((idx = buffer.indexOf("\\n")) !== -1) {
+    const line = buffer.slice(0, idx).trim();
+    buffer = buffer.slice(idx + 1);
+    if (line) {
+      handleLine(line).catch((err) => {
+        console.error("mock-acp error:", err);
+        process.exit(1);
+      });
+    }
+  }
+}
 `;
   fs.writeFileSync(scriptPath, script, "utf8");
   fs.chmodSync(scriptPath, 0o755);
@@ -109,7 +255,7 @@ async function runCliAsync(args, envOverrides = {}) {
 }
 
 describe("parseBlueprintHtml support for blueprint/sh and blueprint/ai", () => {
-  test("parses blueprint/sh and blueprint/ai with optional attrs and </script> unescaping", () => {
+  test("parses blueprint/sh and blueprint/ai with protocol default/validation, preserved cli, optional attrs, and </script> unescaping", () => {
     const parsed = parseBlueprintHtml(`
       <!doctype html>
       <html>
@@ -120,15 +266,16 @@ describe("parseBlueprintHtml support for blueprint/sh and blueprint/ai", () => {
             <\\/script>
             EOF
           </script>
-          <script type="blueprint/ai" id="coder" cli="AGY" model="claude-sonnet" mode="auto" desc="Code assistant">
+          <script type="blueprint/ai" id="coder" protocol="ACP" cli="AGY" model="claude-sonnet" mode="auto" desc="Code assistant">
             You are strict. Watch for <\\/script> tags.
           </script>
-          <script type="blueprint/ai" id="bare-ai" cli="agy">   </script>
+          <script type="blueprint/ai" id="bare-ai" cli="codex">   </script>
+          <script type="blueprint/ai" id="custom-ai" cli="./Bin/MyAgent --acp">Custom</script>
         </body>
       </html>
     `);
 
-    expect(parsed.nodes).toHaveLength(3);
+    expect(parsed.nodes).toHaveLength(4);
     expect(parsed.nodes[0]).toMatchObject({
       id: "inspect",
       type: "blueprint/sh",
@@ -142,7 +289,8 @@ describe("parseBlueprintHtml support for blueprint/sh and blueprint/ai", () => {
       type: "blueprint/ai",
       kind: "ai",
       desc: "Code assistant",
-      cli: "agy",
+      protocol: "acp",
+      cli: "AGY",
       model: "claude-sonnet",
       mode: "auto",
       rolePrompt: "You are strict. Watch for </script> tags.",
@@ -153,14 +301,27 @@ describe("parseBlueprintHtml support for blueprint/sh and blueprint/ai", () => {
       type: "blueprint/ai",
       kind: "ai",
       desc: null,
-      cli: "agy",
+      protocol: "acp",
+      cli: "codex",
       model: null,
       mode: null,
       rolePrompt: "",
     });
+
+    expect(parsed.nodes[3]).toEqual({
+      id: "custom-ai",
+      type: "blueprint/ai",
+      kind: "ai",
+      desc: null,
+      protocol: "acp",
+      cli: "./Bin/MyAgent --acp",
+      model: null,
+      mode: null,
+      rolePrompt: "Custom",
+    });
   });
 
-  test("validates id uniqueness, done exclusion, and cli requirements on sh and ai nodes", () => {
+  test("validates id uniqueness, done exclusion, protocol, and cli requirements on sh and ai nodes", () => {
     const base = `<meta name="bp:id" content="bad-nodes">`;
 
     expect(() =>
@@ -180,8 +341,12 @@ describe("parseBlueprintHtml support for blueprint/sh and blueprint/ai", () => {
     ).toThrow(/requires a non-empty "cli" attribute/);
 
     expect(() =>
-      parseBlueprintHtml(`${base}<script type="blueprint/ai" id="bot" cli="codex">role</script>`)
-    ).toThrow(/Unsupported cli "codex".*agy/);
+      parseBlueprintHtml(`${base}<script type="blueprint/ai" id="bot" cli="   ">role</script>`)
+    ).toThrow(/requires a non-empty "cli" attribute/);
+
+    expect(() =>
+      parseBlueprintHtml(`${base}<script type="blueprint/ai" id="bot" protocol="mcp" cli="agy">role</script>`)
+    ).toThrow(/Unsupported protocol "mcp".*acp/);
 
     expect(() =>
       parseBlueprintHtml(`
@@ -190,6 +355,21 @@ describe("parseBlueprintHtml support for blueprint/sh and blueprint/ai", () => {
         <script type="blueprint/ai" id="dup-id" cli="agy">role</script>
       `)
     ).toThrow(/Duplicate action node id "dup-id"/);
+  });
+
+  test("resolveAcpCommand maps built-in presets and splits/resolves custom commands", () => {
+    expect(resolveAcpCommand("agy")).toEqual(["agy", "acp"]);
+    expect(resolveAcpCommand("AGY")).toEqual(["agy", "acp"]);
+    expect(resolveAcpCommand("opencode")).toEqual(["opencode", "acp"]);
+    expect(resolveAcpCommand("dsh")).toEqual(["dsh", "acp"]);
+    expect(resolveAcpCommand("claude")).toEqual(["npx", "-y", "@agentclientprotocol/claude-agent-acp"]);
+    expect(resolveAcpCommand("codex")).toEqual(["npx", "-y", "@zed-industries/codex-acp"]);
+
+    process.env.BP_AGY_BIN = "/custom/bin/agy";
+    expect(resolveAcpCommand("agy")).toEqual(["/custom/bin/agy", "acp"]);
+
+    const customCmd = resolveAcpCommand('./scripts/my-acp --flag "hello world"');
+    expect(customCmd).toEqual([path.resolve("./scripts/my-acp"), "--flag", "hello world"]);
   });
 });
 
@@ -333,9 +513,9 @@ describe("blueprint/sh runtime execution", () => {
   });
 });
 
-describe("blueprint/ai runtime execution (mock agy CLI)", () => {
-  test("temporary chat prepends rolePrompt, skips --conversation, forwards --model/--mode and cwd, and normalizes keys", async () => {
-    const mock = createMockAgy();
+describe("blueprint/ai runtime execution (mock ACP server)", () => {
+  test("new session prepends rolePrompt, sets model/mode, collects streamed chunks, and supports custom cli command", async () => {
+    const mock = createMockAcpServer();
     process.env.BP_AGY_BIN = mock.scriptPath;
 
     const workDir = fs.realpathSync(fs.mkdtempSync(path.join(tmpDir, "work-")));
@@ -344,12 +524,12 @@ describe("blueprint/ai runtime execution (mock agy CLI)", () => {
       `
       <meta name="bp:id" content="ai-temp-app">
       <script type="blueprint/flow" on="ask">
-        Run reviewer then alt-bot then done.
+        Run reviewer then custom-bot then done.
       </script>
-      <script type="blueprint/ai" id="reviewer" cli="agy" model="claude-sonnet" mode="auto" desc="Review code">
+      <script type="blueprint/ai" id="reviewer" protocol="acp" cli="agy" model="claude-sonnet" mode="auto" desc="Review code">
         You are a strict reviewer.
       </script>
-      <script type="blueprint/ai" id="alt-bot" cli="agy">
+      <script type="blueprint/ai" id="custom-bot" cli="${mock.scriptPath} --custom-flag">
       </script>
       `
     );
@@ -365,47 +545,36 @@ describe("blueprint/ai runtime execution (mock agy CLI)", () => {
     });
 
     expect(res1.ctx.last.output).toEqual({
-      text: "reply#1:conv=new:model=claude-sonnet:mode=auto:prompt=You are a strict reviewer.\n\nInspect index.js",
+      text: "reply:sess=sess-1:model=claude-sonnet:mode=auto:prompt=You are a strict reviewer.\n\nInspect index.js",
       session: "sess-1",
     });
 
-    // Also test alternative JSON output keys (`response`, `conversation_id`) and empty rolePrompt
     let idx2 = 0;
-    const seq2 = ["alt-bot", "done"];
+    const seq2 = ["custom-bot", "done"];
     const res2 = await runBlueprintFlow({
       filePath: htmlFile,
       event: "ask",
-      data: { prompt: "__ALT_KEYS__" },
+      data: { prompt: "Custom check" },
       dataDir,
       decide: () => seq2[idx2++],
     });
 
     expect(res2.ctx.last.output).toEqual({
-      text: "alt-reply",
-      session: "conv-alt-99",
+      text: "reply:sess=sess-1:model=none:mode=none:prompt=Custom check",
+      session: "sess-1",
     });
 
     const calls = readMockCalls(mock.logPath);
-    expect(calls).toHaveLength(2);
-    expect(calls[0].cwd).toBe(workDir);
-    expect(calls[0].argv).toEqual([
-      "-p",
-      "You are a strict reviewer.\n\nInspect index.js",
-      "--output-format",
-      "json",
-      "--model",
-      "claude-sonnet",
-      "--mode",
-      "auto",
-    ]);
-    expect(calls[0].argv).not.toContain("--conversation");
-
-    expect(calls[1].cwd).toBe(fs.realpathSync(process.cwd()));
-    expect(calls[1].argv).toEqual(["-p", "__ALT_KEYS__", "--output-format", "json"]);
+    const spawns = calls.filter((c) => c.type === "spawn");
+    expect(spawns).toHaveLength(2);
+    expect(spawns[0].cwd).toBe(workDir);
+    expect(spawns[0].argv).toEqual(["acp"]);
+    expect(spawns[1].cwd).toBe(fs.realpathSync(process.cwd()));
+    expect(spawns[1].argv).toEqual(["--custom-flag"]);
   });
 
-  test("full SQLite session-resume workflow: sql load -> js prepare -> ai (new then --conversation without rolePrompt) -> sql upsert", async () => {
-    const mock = createMockAgy();
+  test("full SQLite session-resume workflow: turn 1 session/new + rolePrompt -> turn 2 session/load (ignoring replayed chunks) + prompt without rolePrompt", async () => {
+    const mock = createMockAcpServer();
     process.env.BP_AGY_BIN = mock.scriptPath;
 
     const htmlFile = writeBlueprint(
@@ -463,41 +632,33 @@ describe("blueprint/ai runtime execution (mock agy CLI)", () => {
       });
     };
 
-    // Turn 1: no stored session -> rolePrompt prepended, no --conversation
+    // Turn 1: no stored session -> session/new + rolePrompt
     const turn1 = await runTurn("Hello round 1");
     expect(turn1.ctx.steps.chat.output).toEqual({
-      text: "reply#1:conv=new:model=gemini-2.5-pro:mode=none:prompt=SYSTEM ROLE: Keep answers concise.\n\nHello round 1",
+      text: "reply:sess=sess-1:model=gemini-2.5-pro:mode=none:prompt=SYSTEM ROLE: Keep answers concise.\n\nHello round 1",
       session: "sess-1",
     });
 
-    // Turn 2: loads sess-1 from SQLite -> passes --conversation sess-1, NO repeated rolePrompt
+    // Turn 2: loads sess-1 from SQLite -> session/load (replayed chunks ignored), NO repeated rolePrompt
     const turn2 = await runTurn("Follow-up round 2");
     expect(turn2.ctx.steps.chat.output).toEqual({
-      text: "reply#2:conv=sess-1:model=gemini-2.5-pro:mode=none:prompt=Follow-up round 2",
-      session: "sess-1-next-2",
+      text: "reply:sess=sess-1:model=gemini-2.5-pro:mode=none:prompt=Follow-up round 2",
+      session: "sess-1",
     });
+    expect(turn2.ctx.steps.chat.output.text).not.toContain("[REPLAYED_HISTORY_MUST_IGNORE]");
 
-    const calls = readMockCalls(mock.logPath);
-    expect(calls).toHaveLength(2);
-    expect(calls[0].argv).toEqual([
-      "-p",
-      "SYSTEM ROLE: Keep answers concise.\n\nHello round 1",
-      "--output-format",
-      "json",
-      "--model",
-      "gemini-2.5-pro",
+    const calls = readMockCalls(mock.logPath).filter((c) => c.type === "recv");
+    const methods = calls.map((c) => c.msg.method);
+    expect(methods).toEqual([
+      "initialize",
+      "session/new",
+      "session/set_model",
+      "session/prompt",
+      "initialize",
+      "session/load",
+      "session/set_model",
+      "session/prompt",
     ]);
-    expect(calls[1].argv).toEqual([
-      "-p",
-      "Follow-up round 2",
-      "--conversation",
-      "sess-1",
-      "--output-format",
-      "json",
-      "--model",
-      "gemini-2.5-pro",
-    ]);
-    expect(calls[1].argv[1]).not.toContain("SYSTEM ROLE");
 
     const rows = runBlueprintSql({
       fileOrId: "ai-resume-app",
@@ -507,14 +668,44 @@ describe("blueprint/ai runtime execution (mock agy CLI)", () => {
     expect(rows).toEqual([
       {
         id: "t-1",
-        session_id: "sess-1-next-2",
-        last_reply: "reply#2:conv=sess-1:model=gemini-2.5-pro:mode=none:prompt=Follow-up round 2",
+        session_id: "sess-1",
+        last_reply: "reply:sess=sess-1:model=gemini-2.5-pro:mode=none:prompt=Follow-up round 2",
       },
     ]);
   });
 
-  test("records missing prompt, non-zero exit code, invalid JSON, and missing text errors into ctx.history", async () => {
-    const mock = createMockAgy();
+  test("auto-approves session/request_permission without hanging", async () => {
+    const mock = createMockAcpServer();
+    process.env.BP_AGY_BIN = mock.scriptPath;
+
+    const htmlFile = writeBlueprint(
+      "ai-perm.html",
+      `
+      <meta name="bp:id" content="ai-perm-app">
+      <script type="blueprint/flow" on="run">Run bot then done.</script>
+      <script type="blueprint/ai" id="bot" cli="agy"></script>
+      `
+    );
+
+    const seq = ["bot", "done"];
+    let idx = 0;
+    const res = await runBlueprintFlow({
+      filePath: htmlFile,
+      event: "run",
+      data: { prompt: "Test __PERMISSION__" },
+      dataDir,
+      decide: () => seq[idx++],
+    });
+
+    expect(res.ctx.steps.bot.ok).toBe(true);
+    expect(res.ctx.steps.bot.output).toEqual({
+      text: "reply:sess=sess-1:model=none:mode=none:perm=allow-1:prompt=Test __PERMISSION__",
+      session: "sess-1",
+    });
+  });
+
+  test("records missing prompt, non-zero exit code, invalid JSON, and JSON-RPC errors into ctx.history", async () => {
+    const mock = createMockAcpServer();
     process.env.BP_AGY_BIN = mock.scriptPath;
 
     const htmlFile = writeBlueprint(
@@ -553,21 +744,21 @@ describe("blueprint/ai runtime execution (mock agy CLI)", () => {
     expect(exitFail.ctx.steps.chat).toEqual({
       ok: false,
       output: null,
-      error: 'AI CLI "agy" exited with code 2 on node "chat": mock agy simulated failure',
+      error: 'ACP CLI "agy" exited with code 2 on node "chat": mock acp simulated failure',
     });
 
     const badJson = await runErrorCase({ prompt: "__BAD_JSON__" });
     expect(badJson.ctx.steps.chat.ok).toBe(false);
     expect(badJson.ctx.steps.chat.error).toMatch(/returned invalid JSON/);
 
-    const missingText = await runErrorCase({ prompt: "__MISSING_TEXT__" });
-    expect(missingText.ctx.steps.chat.ok).toBe(false);
-    expect(missingText.ctx.steps.chat.error).toMatch(/missing a response text field/);
-    expect(missingText.emittedEvents[0].event).toBe("ai:failed");
+    const rpcErr = await runErrorCase({ prompt: "__RPC_ERROR__" });
+    expect(rpcErr.ctx.steps.chat.ok).toBe(false);
+    expect(rpcErr.ctx.steps.chat.error).toMatch(/ACP error \(-32000\).*simulated rpc error/);
+    expect(rpcErr.emittedEvents[0].event).toBe("ai:failed");
   });
 
-  test("end-to-end bp run CLI combines blueprint/sh and blueprint/ai with mock Jev server and BP_AGY_BIN", async () => {
-    const mock = createMockAgy();
+  test("end-to-end bp run CLI combines blueprint/sh and blueprint/ai with mock Jev server and mock ACP server", async () => {
+    const mock = createMockAcpServer();
     let turn = 0;
     const server = Bun.serve({
       port: 0,
@@ -630,7 +821,7 @@ describe("blueprint/ai runtime execution (mock agy CLI)", () => {
         ["ai-step", true],
       ]);
       expect(parsed.ctx.last.output).toEqual({
-        text: "reply#1:conv=new:model=none:mode=plan:prompt=Be concise.\n\nTask: audit",
+        text: "reply:sess=sess-1:model=none:mode=plan:prompt=Be concise.\n\nTask: audit",
         session: "sess-1",
       });
     } finally {

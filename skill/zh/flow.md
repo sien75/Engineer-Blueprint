@@ -38,7 +38,7 @@
 
 - **`blueprint/js`**：纯 ES Module 动作节点（`export default async (ctx) => ...`）——详见 [`js.md`](js.md)。
 - **`blueprint/sh`**：Shell 脚本动作节点（从 `stdin` 读取全量 `ctx` JSON）——详见 [`sh.md`](sh.md)。
-- **`blueprint/ai`**：无状态 AI CLI 动作节点（`cli="agy"`）——详见 [`ai.md`](ai.md)。
+- **`blueprint/ai`**：基于 ACP 的无状态 AI CLI 动作节点（`protocol="acp"`、`cli="..."`）——详见 [`ai.md`](ai.md)。
 - **`blueprint/sql`** 与 **`blueprint/emit`**：规范如下。
 
 ### `blueprint/sql`
