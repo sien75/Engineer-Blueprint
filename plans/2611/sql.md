@@ -47,8 +47,8 @@ HTML 中无需维护版本号或增量迁移脚本，只需维护当前期望的
 
 ### 1. 隔离与生命周期
 
-- **一蓝图一库**：以 `<meta name="bp:id" content="...">`（优先）或 `<meta id="...">` 作为数据库唯一身份标识，一个蓝图对应一个独立数据库（`<data>/blueprints/<id>.<mode>.sqlite`，`<data>` 默认为 `$BP_DATA` 或 `~/.engineer-blueprint/data`，可通过 `--data` 覆盖），代码目录与数据目录分离。
-- **环境隔离**：`prod` 与 `dev` 各自使用独立的 SQLite 文件（`<id>.prod.sqlite` 与 `<id>.dev.sqlite`），开发调试互不污染。
+- **一蓝图一库**：以 `<meta name="bp:id" content="...">`（优先）或 `<meta id="...">` 作为数据库唯一身份标识，一个蓝图对应一个独立数据库（`<data>/<id>/<mode>/db.sqlite`，`<data>` 默认为 `$BP_DATA` 或 `~/.engineer-blueprint/data`，可通过 `--data` 覆盖），代码目录与数据目录分离。
+- **环境隔离**：`prod` 与 `dev` 各自使用独立目录与 SQLite 文件（`<data>/<id>/prod/db.sqlite` 与 `<data>/<id>/dev/db.sqlite`），开发调试互不污染。
 - **文件解耦**：删除蓝图 `.html` 文件不删除对应的 `.sqlite` 数据文件；将同 ID 的蓝图文件放回目录并再次运行 `bp sql` 后自动接上原有数据。
 - **唯一 CLI 入口**：CLI 提供 `bp sql <file.html|id> "<statement>" [--dev] [--data <dir>] [--json]`。传入 `.html` 文件路径时自动对 `<script type="blueprint/def">` 执行声明式同步后再运行 `<statement>`；直接传入蓝图 ID 时直接在已初始化的数据库上执行 `<statement>`。
 

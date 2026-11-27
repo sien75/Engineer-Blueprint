@@ -62,7 +62,7 @@ description: 使用声明式 blueprint/* 代码块、bp Daemon/CLI 与 window.bp
    - **`bp sql <file.html|id> "<statement>" [--dev]`**：在开发调试阶段查询或修改蓝图 SQLite 数据（写操作会通知运行中的 Daemon 刷新 `bp.watch`）。
    - **`bp logs <slug> [--dev] [--limit <n>]`**：读取 Daemon 环形缓冲区中近期的 Flow、节点步骤、定时调度、`init` 与重载日志。
    - **`bp run <file.html> <event> [json] | --init`**：无需启动 Daemon，直接针对单个 `.html` 文件执行离线单次 Flow。
-3. **显式选择环境与数据目录**：默认模式为 `prod`；传入 `--dev`（或访问 `/bp-dev/<slug>`）可使用隔离的开发环境存储。禁止直接打开 `.sqlite` 文件或手动修改 `<data>/blueprints/` 目录下的文件（默认 `$BP_DATA` 或 `~/.engineer-blueprint/data`，可用 `--data <dir>` 覆盖）。
+3. **显式选择环境与数据目录**：默认模式为 `prod`；传入 `--dev`（或访问 `/bp-dev/<slug>`）可使用隔离的开发环境存储。禁止直接打开 `.sqlite` 文件或手动修改 `<data>/<id>/` 目录下的文件（默认 `$BP_DATA` 或 `~/.engineer-blueprint/data`，可用 `--data <dir>` 覆盖；各模式路径为 `<data>/<id>/<mode>/db.sqlite`）。
 
 ## 模块指南
 

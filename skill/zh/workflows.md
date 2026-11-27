@@ -28,7 +28,7 @@
    - 在 `<script type="blueprint/flow">` 编写自然语言流程，并按需声明 `blueprint/js`、`blueprint/sh`、`blueprint/sql`、`blueprint/ai`、`blueprint/emit` 节点（[`flow.md`](flow.md)）；
    - 在 `<body>` 编写前端界面与 `window.bp` 交互（`bp.watch`、`bp.emit`、`bp.on`、[`daemon.md`](daemon.md)）。
 2. **启动或热重载进入 `dev` 环境**：
-   - 首次运行 `bp up [dir]`；修改 `.html` 后执行 `bp reload <slug> --dev`（自动同步 `.dev.sqlite`、重启 `every` 定时器并触发刷新）。
+   - 首次运行 `bp up [dir]`；修改 `.html` 后执行 `bp reload <slug> --dev`（自动同步 `<data>/<id>/dev/db.sqlite`、重启 `every` 定时器并触发刷新）。
 3. **无感浏览器 + CLI 协同调试**：
    - **后台页面验证**：优先使用 `ego-lite`（`ego-browser`）、内置自动化浏览器或 `browser-use` 等**用户无感**的浏览器工具打开 `http://127.0.0.1:7500/bp-dev/<slug>` 检查渲染、控制台报错与交互（具体使用哪种调试浏览器也可与用户商议）。
    - **触发事件**：`bp emit <slug> <event> '<json>' --dev` —— 直接触发后端 `on` Flow，验证数据库变更及界面 `bp.watch` / `bp.on` 实时推送。

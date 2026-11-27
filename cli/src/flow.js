@@ -589,7 +589,7 @@ export async function executeFlows({
 
 /**
  * Execute matching `<script type="blueprint/flow">` block(s) in a blueprint `.html` file.
- * Automatically reconciles `<script type="blueprint/def">` against `<id>.<mode>.sqlite` first.
+ * Automatically reconciles `<script type="blueprint/def">` against `<data>/<id>/<mode>/db.sqlite` first.
  * @param {{
  *   filePath: string,
  *   event?: string,

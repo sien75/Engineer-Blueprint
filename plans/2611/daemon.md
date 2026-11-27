@@ -53,7 +53,7 @@
 | 方向 | 协议消息 | 语义与安全约束 |
 |---|---|---|
 | Client → Server | `{ id?, op: "emit", event, data }` | 校验非空 `event`，广播 `{ op: "event", source: "ui", ... }`，执行匹配的 `on="<event>"` Flow，实时推送 `blueprint/emit` 事件与 `watch` 数据变更。 |
-| Client → Server | `{ id?, op: "watch", query }` | 仅允许纯表名（`^[A-Za-z_][A-Za-z0-9_]*$`）或单条只读 `SELECT` / `WITH ... SELECT`；对 `<id>.<mode>.sqlite` 以只读连接执行并订阅，返回初始 `rows`。 |
+| Client → Server | `{ id?, op: "watch", query }` | 仅允许纯表名（`^[A-Za-z_][A-Za-z0-9_]*$`）或单条只读 `SELECT` / `WITH ... SELECT`；对 `<data>/<id>/<mode>/db.sqlite` 以只读连接执行并订阅，返回初始 `rows`。 |
 | Client → Server | `{ id?, op: "unwatch", query }` | 取消该连接对指定 `query` 的变更推送订阅。 |
 | Client → Server | `{ id?, op: "sql", sql, params }` | **严格只读**（仅允许单条 `SELECT`、`WITH ... SELECT` 或 `PRAGMA table_info(...)`，配合只读 SQLite 连接双重兜底），支持 `:name` 命名参数与位置数组参数。 |
 | Server → Client | `{ op: "event" \| "change" \| "reload" \| "error", ... }` | 分别用于前端事件通知、`bp.watch` 增量重查推送、页面重载与错误提示。 |

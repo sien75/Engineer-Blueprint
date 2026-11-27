@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  ensureMainDbPath,
   executeReadOnlyQuery,
-  getMainDbPath,
   getMode,
   resolveDataDir,
   syncBlueprint,
@@ -488,7 +488,7 @@ export function startDaemon({
     }
     if (uniqueQueries.size === 0) return;
 
-    const dbPath = getMainDbPath(entry.id, mode, resolvedDataDir);
+    const dbPath = ensureMainDbPath(entry.id, mode, resolvedDataDir);
     for (const [query, sql] of uniqueQueries.entries()) {
       let rows;
       try {
@@ -636,7 +636,7 @@ export function startDaemon({
 
   async function runInitFlowsInBackground(slug, mode, entry, initFlows) {
     if (shuttingDown || initFlows.length === 0) return;
-    const dbPath = getMainDbPath(entry.id, mode, resolvedDataDir);
+    const dbPath = ensureMainDbPath(entry.id, mode, resolvedDataDir);
     appendLog(slug, mode, {
       type: "init",
       level: "info",
@@ -671,7 +671,7 @@ export function startDaemon({
     if (shuttingDown) return;
     const entry = registry.get(registryKey(mode, slug));
     if (!entry || entry.error || !entry.parsed) return;
-    const dbPath = getMainDbPath(entry.id, mode, resolvedDataDir);
+    const dbPath = ensureMainDbPath(entry.id, mode, resolvedDataDir);
     appendLog(slug, mode, {
       type: "every",
       level: "info",
@@ -981,7 +981,7 @@ export function startDaemon({
       };
     }
 
-    const dbPath = getMainDbPath(entry.id, mode, resolvedDataDir);
+    const dbPath = ensureMainDbPath(entry.id, mode, resolvedDataDir);
     const result = await executeFlows({
       parsed: entry.parsed,
       flows: matched,
@@ -1333,7 +1333,7 @@ export function startDaemon({
               return;
             }
             const validated = validateWatchQuery(msg.query);
-            const dbPath = getMainDbPath(entry.id, mode, resolvedDataDir);
+            const dbPath = ensureMainDbPath(entry.id, mode, resolvedDataDir);
             const rows = executeReadOnlyQuery({ dbPath, sql: validated.sql });
             ws.data.watches.set(validated.query, validated.sql);
             replyOk({ rows });
@@ -1354,7 +1354,7 @@ export function startDaemon({
               return;
             }
             const validatedSql = validateReadOnlySql(msg.sql, { allowPragmaTableInfo: true });
-            const dbPath = getMainDbPath(entry.id, mode, resolvedDataDir);
+            const dbPath = ensureMainDbPath(entry.id, mode, resolvedDataDir);
             const rows = executeReadOnlyQuery({
               dbPath,
               sql: validatedSql,

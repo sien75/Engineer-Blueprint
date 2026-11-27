@@ -62,7 +62,7 @@ Specification and operational skill for single-file `.html` Engineer Blueprints.
    - **`bp sql <file.html|id> "<statement>" [--dev]`**: Query or modify blueprint SQLite data during development (notifying the running daemon on writes so `bp.watch` refreshes).
    - **`bp logs <slug> [--dev] [--limit <n>]`**: Inspect recent flow, step, schedule, init, and reload logs from the daemon ring buffer.
    - **`bp run <file.html> <event> [json] | --init`**: Execute an offline single flow run directly against a `.html` file without starting the daemon.
-3. **Select environment and storage explicitly**: Default mode is `prod`; pass `--dev` (or visit `/bp-dev/<slug>`) for isolated development storage. Never open `.sqlite` files directly or hand-edit files under `<data>/blueprints/` (`$BP_DATA` or `~/.engineer-blueprint/data`, override with `--data <dir>`).
+3. **Select environment and storage explicitly**: Default mode is `prod`; pass `--dev` (or visit `/bp-dev/<slug>`) for isolated development storage. Never open `.sqlite` files directly or hand-edit files under `<data>/<id>/` (`$BP_DATA` or `~/.engineer-blueprint/data`, override with `--data <dir>`; each mode lives at `<data>/<id>/<mode>/db.sqlite`).
 
 ## Modules
 

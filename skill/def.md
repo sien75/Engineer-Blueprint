@@ -33,7 +33,7 @@ Blueprints declare only the desired target schema in `.html`, with no schema ver
 - **Explicit indexes**: Obsolete or modified indexes are dropped prior to column and table drops; missing or updated indexes are created.
 - **Column rename**: Treated as dropping the old column (deleting its data) and adding a new column.
 - **Non-DDL statements**: Statements other than `CREATE TABLE` and `CREATE [UNIQUE] INDEX` (such as `INSERT OR IGNORE ...`) execute in document order after schema reconciliation.
-- **Isolation & lifecycle independence**: Each blueprint ID maps to an isolated SQLite database (`<data>/blueprints/<id>.<mode>.sqlite`), with `dev` and `prod` stored separately. Deleting an `.html` file preserves its database; restoring an `.html` file with the same blueprint ID reconnects to the existing database.
+- **Isolation & lifecycle independence**: Each blueprint ID maps to an isolated SQLite database (`<data>/<id>/<mode>/db.sqlite`), with `dev` and `prod` stored separately. Deleting an `.html` file preserves its database; restoring an `.html` file with the same blueprint ID reconnects to the existing database.
 
 ## 3. Schema Safety Cautions
 
@@ -46,7 +46,7 @@ Blueprints declare only the desired target schema in `.html`, with no schema ver
 
 | Accessor | Contract |
 |---|---|
-| **Backend scripts (`blueprint/js`, `blueprint/sh`)** | Must not open `.sqlite` files directly; route all reads and writes through `<script type="blueprint/sql">` nodes ([`flow.md`](flow.md)) or `bp sql`, and do not hand-edit files under `<data>/blueprints/`. |
+| **Backend scripts (`blueprint/js`, `blueprint/sh`)** | Must not open `.sqlite` files directly; route all reads and writes through `<script type="blueprint/sql">` nodes ([`flow.md`](flow.md)) or `bp sql`, and do not hand-edit files under `<data>/<id>/`. |
 | **Frontend `window.bp.sql`** | Strictly read-only SQL query interface (`SELECT` / `WITH ... SELECT` / `PRAGMA table_info(...)`) served by the daemon client ([`daemon.md`](daemon.md)). All UI writes must trigger backend flows via `bp.emit(...)`. |
 | **Frontend `window.bp.watch`** | Live subscription interface accepting a plain table name (`bp.watch("notes", cb)`) or a conditional read-only `SELECT` / `WITH ... SELECT` query (`bp.watch("SELECT * FROM messages ORDER BY id DESC LIMIT 50", cb)`), auto-refreshed on backend writes ([`daemon.md`](daemon.md)). |
 
@@ -59,5 +59,5 @@ bp sql <file.html|id> "<statement>" [--dev] [--data <dir>] [--json]
 ```
 
 - When passed a `.html` file path, `bp sql` reconciles `<script type="blueprint/def">` automatically before executing `<statement>`.
-- When passed a bare blueprint ID, `bp sql` executes `<statement>` directly against the already-initialized `<id>.<mode>.sqlite` database.
+- When passed a bare blueprint ID, `bp sql` executes `<statement>` directly against the already-initialized `<data>/<id>/<mode>/db.sqlite` database.
 - When `<statement>` writes data (or reconciles schema changes), `bp sql` performs a best-effort notification to the running daemon (`/_bp/notify-change`) so open `bp.watch(...)` subscribers refresh immediately.

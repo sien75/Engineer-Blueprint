@@ -49,7 +49,7 @@ INSERT INTO notes (id, body) VALUES (:id, :body);
 </script>
 ```
 
-- Ignored during `<script type="blueprint/def">` schema reconciliation ([`def.md`](def.md)); executed as a flow step against `<id>.<mode>.sqlite`.
+- Ignored during `<script type="blueprint/def">` schema reconciliation ([`def.md`](def.md)); executed as a flow step against `<data>/<id>/<mode>/db.sqlite`.
 - **Parameter binding**: Scans each SQL statement for named placeholders (`:name`, `$name`, `@name`, ignoring comments and string literals) and binds **only** the keys present in the SQL statement from:
   1. `ctx.last?.output` if it is a plain object, otherwise
   2. `ctx.event?.data` if it is a plain object, otherwise `{}`.
@@ -115,7 +115,7 @@ bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-st
 bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]
 ```
 
-- Automatically reconciles `<script type="blueprint/def">` with `<id>.<mode>.sqlite` before running matching flow(s).
+- Automatically reconciles `<script type="blueprint/def">` with `<data>/<id>/<mode>/db.sqlite` before running matching flow(s).
 - `--dev` targets `dev` mode instead of `prod`; `--data <dir>` overrides `$BP_DATA` / `~/.engineer-blueprint/data`.
 - `--jev-url` overrides `$BP_JEV_URL` (default `https://api.typesafe.ai/v1`); `--jev-model` overrides `$BP_JEV_MODEL` (default `jev-1.14`); `--jev-key` overrides `$BP_JEV_API_KEY` / `$JEV_API_KEY`.
 - `--max-steps <n>` sets the loop guard (positive integer, default `16`); `--json` outputs structured JSON.

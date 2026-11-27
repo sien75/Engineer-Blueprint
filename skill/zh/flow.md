@@ -49,7 +49,7 @@ INSERT INTO notes (id, body) VALUES (:id, :body);
 </script>
 ```
 
-- 在 `<script type="blueprint/def">` 表结构同步时会被忽略（[`def.md`](def.md)），仅作为 Flow 动作节点对 `<id>.<mode>.sqlite` 执行。
+- 在 `<script type="blueprint/def">` 表结构同步时会被忽略（[`def.md`](def.md)），仅作为 Flow 动作节点对 `<data>/<id>/<mode>/db.sqlite` 执行。
 - **命名参数绑定**：扫描每条 SQL 语句中的 `:name`、`$name`、`@name` 占位符（忽略注释与字符串字面量），**仅提取语句实际出现的参数键**进行绑定。参数源优先级为：
   1. 若 `ctx.last?.output` 为普通对象，使用 `ctx.last.output`；
   2. 否则若 `ctx.event?.data` 为普通对象，使用 `ctx.event.data`；
@@ -116,7 +116,7 @@ bp run <file.html> <event> [json-data] [--dev] [--data <dir>] [--json] [--max-st
 bp run <file.html> --init [--dev] [--data <dir>] [--json] [--max-steps <n>] [--jev-url <url>] [--jev-model <name>] [--jev-key <key>]
 ```
 
-- 执行匹配 Flow 前会自动根据 `<script type="blueprint/def">` 同步 `<id>.<mode>.sqlite` 表结构。
+- 执行匹配 Flow 前会自动根据 `<script type="blueprint/def">` 同步 `<data>/<id>/<mode>/db.sqlite` 表结构。
 - `--dev` 指向开发环境数据库；`--data <dir>` 覆盖 `$BP_DATA` / `~/.engineer-blueprint/data`。
 - `--jev-url` 覆盖 `$BP_JEV_URL`（默认 `https://api.typesafe.ai/v1`）；`--jev-model` 覆盖 `$BP_JEV_MODEL`（默认 `jev-1.14`）；`--jev-key` 覆盖 `$BP_JEV_API_KEY` / `$JEV_API_KEY`。
 - `--max-steps <n>` 设置最大决策轮数（正整数，默认 `16`）；`--json` 输出结构化 JSON 结果。

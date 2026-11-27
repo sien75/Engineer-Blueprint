@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseBlueprintHtml, validateBlueprintId } from "../src/parse.js";
 import { splitSqlStatements } from "../src/sql.js";
-import { getMainDbPath, runBlueprintSql } from "../src/db.js";
+import { Database } from "bun:sqlite";
+import { ensureMainDbPath, getMainDbPath, runBlueprintSql } from "../src/db.js";
 
 const CLI_BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../bin/bp.js");
 
@@ -304,8 +305,9 @@ describe("auto-reconciled bp sql and isolation", () => {
     }).rows.map((r) => r.name);
     expect(tables).toEqual(["users"]);
 
-    // Verify no backups directory is created
-    expect(fs.existsSync(path.join(dataDir, "blueprints", "backups"))).toBe(false);
+    // Verify no backups directory is created under the blueprint data root
+    expect(fs.existsSync(path.join(dataDir, "drop-app", "backups"))).toBe(false);
+    expect(fs.existsSync(path.join(dataDir, "blueprints"))).toBe(false);
   });
 
   test("isolates dev and prod databases completely", () => {
@@ -350,6 +352,9 @@ describe("auto-reconciled bp sql and isolation", () => {
     expect(devVal).toBe("development");
     expect(fs.existsSync(getMainDbPath("iso-app", "prod", dataDir))).toBe(true);
     expect(fs.existsSync(getMainDbPath("iso-app", "dev", dataDir))).toBe(true);
+    expect(getMainDbPath("iso-app", "prod", dataDir)).toBe(
+      path.join(dataDir, "iso-app", "prod", "db.sqlite")
+    );
 
     // Dropping table in dev does not affect prod
     writeBlueprint(
@@ -375,6 +380,26 @@ describe("auto-reconciled bp sql and isolation", () => {
         dataDir,
       }).rows[0].v
     ).toBe("production");
+  });
+
+  test("migrates legacy blueprints/<id>.<mode>.sqlite into <id>/<mode>/db.sqlite", () => {
+    const legacyPath = path.join(dataDir, "blueprints", "legacy-app.prod.sqlite");
+    fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+    const seed = new Database(legacyPath);
+    seed.exec("CREATE TABLE kv (k TEXT PRIMARY KEY, v TEXT); INSERT INTO kv VALUES ('hello', 'world');");
+    seed.close();
+
+    const migrated = ensureMainDbPath("legacy-app", "prod", dataDir);
+    expect(migrated).toBe(path.join(dataDir, "legacy-app", "prod", "db.sqlite"));
+    expect(fs.existsSync(migrated)).toBe(true);
+    expect(fs.existsSync(legacyPath)).toBe(false);
+
+    const rows = runBlueprintSql({
+      fileOrId: "legacy-app",
+      statement: "SELECT v FROM kv WHERE k = 'hello'",
+      dataDir,
+    }).rows;
+    expect(rows).toEqual([{ v: "world" }]);
   });
 
   test("handles triggers, index updates, and .html file decoupling", () => {

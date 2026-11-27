@@ -28,7 +28,7 @@ Use when creating or updating a `.html` blueprint and verifying it in `dev` mode
    - Write natural-language flows in `<script type="blueprint/flow">` plus action nodes (`js`, `sh`, `sql`, `ai`, `emit`) ([`flow.md`](flow.md)).
    - Build the `<body>` UI using `window.bp` (`bp.watch`, `bp.emit`, `bp.on`) ([`daemon.md`](daemon.md)).
 2. **Start or hot-reload in `dev` mode**:
-   - Run `bp up [dir]` initially, or `bp reload <slug> --dev` after editing `.html` (reconciles `.dev.sqlite`, restarts `every` timers, and triggers reload).
+   - Run `bp up [dir]` initially, or `bp reload <slug> --dev` after editing `.html` (reconciles `<data>/<id>/dev/db.sqlite`, restarts `every` timers, and triggers reload).
 3. **Debug with a non-intrusive browser + CLI commands**:
    - **Silent UI verification**: Prefer `ego-lite` (`ego-browser`), an agent built-in browser, or `browser-use` (or agree with the user on which debugging browser tool to use) to open `http://127.0.0.1:7500/bp-dev/<slug>` and inspect rendering, console errors, and interactions without popping up foreground windows.
    - **Trigger flows**: `bp emit <slug> <event> '<json>' --dev` to trigger matching `on` flows and observe live `bp.watch` / `bp.on` updates.

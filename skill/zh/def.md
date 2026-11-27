@@ -33,7 +33,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'light');
 - **显式索引**：在删列与删表之前先删除失效或已变更的索引；创建新增或更新后的索引。
 - **列重命名**：等效于删除旧列（清除其数据）并新增列。
 - **非 DDL 语句**：除 `CREATE TABLE` 与 `CREATE [UNIQUE] INDEX` 之外的语句（如 `INSERT OR IGNORE ...`）在表结构同步完成后按文档顺序执行。
-- **隔离性与生命周期独立**：每个蓝图 ID 对应一个独立的 SQLite 数据库（`<data>/blueprints/<id>.<mode>.sqlite`），`dev` 与 `prod` 各自独立存储。删除 `.html` 文件会保留其数据库；恢复具有相同蓝图 ID 的 `.html` 文件后会自动接续原有数据库。
+- **隔离性与生命周期独立**：每个蓝图 ID 对应一个独立的 SQLite 数据库（`<data>/<id>/<mode>/db.sqlite`），`dev` 与 `prod` 各自独立存储。删除 `.html` 文件会保留其数据库；恢复具有相同蓝图 ID 的 `.html` 文件后会自动接续原有数据库。
 
 ## 3. 表结构安全注意事项
 
@@ -46,7 +46,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'light');
 
 | 访问方 | 契约规则 |
 |---|---|
-| **后端脚本（`blueprint/js`、`blueprint/sh`）** | 不得直接打开 `.sqlite` 文件；所有读写均须经由 `<script type="blueprint/sql">` 节点（[`flow.md`](flow.md)）或 `bp sql` 执行，且禁止手动编辑 `<data>/blueprints/` 目录下的文件。 |
+| **后端脚本（`blueprint/js`、`blueprint/sh`）** | 不得直接打开 `.sqlite` 文件；所有读写均须经由 `<script type="blueprint/sql">` 节点（[`flow.md`](flow.md)）或 `bp sql` 执行，且禁止手动编辑 `<data>/<id>/` 目录下的文件。 |
 | **前端 `window.bp.sql`** | 由 Daemon 客户端提供的**严格只读** SQL 查询接口（`SELECT` / `WITH ... SELECT` / `PRAGMA table_info(...)`，详见 [`daemon.md`](daemon.md)）；所有写操作须通过 `bp.emit(...)` 触发后端流程完成。 |
 | **前端 `window.bp.watch`** | 实时订阅接口，支持传入纯表名（如 `bp.watch("notes", cb)`）或带条件的只读 `SELECT` / `WITH ... SELECT` 查询（如 `bp.watch("SELECT * FROM messages ORDER BY id DESC LIMIT 50", cb)`），后端写库时自动重查推送（[`daemon.md`](daemon.md)）。 |
 
@@ -59,5 +59,5 @@ bp sql <file.html|id> "<statement>" [--dev] [--data <dir>] [--json]
 ```
 
 - 传入 `.html` 文件路径时，`bp sql` 会先自动依据最新的 `<script type="blueprint/def">` 同步表结构，再执行 `<statement>`。
-- 传入纯蓝图 ID 时，`bp sql` 直接对已初始化的 `<id>.<mode>.sqlite` 数据库执行 `<statement>`。
+- 传入纯蓝图 ID 时，`bp sql` 直接对已初始化的 `<data>/<id>/<mode>/db.sqlite` 数据库执行 `<statement>`。
 - 当 `<statement>` 写入数据或变更表结构时，`bp sql` 会尽最大努力通知运行中的 Daemon（`/_bp/notify-change`），使已打开的 `bp.watch(...)` 页面即时刷新。

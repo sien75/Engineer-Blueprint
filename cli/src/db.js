@@ -38,7 +38,56 @@ export function getMode(dev) {
 }
 
 export function getMainDbPath(id, mode, dataDir) {
+  return path.join(dataDir, id, mode, "db.sqlite");
+}
+
+function getLegacyMainDbPath(id, mode, dataDir) {
   return path.join(dataDir, "blueprints", `${id}.${mode}.sqlite`);
+}
+
+function moveSqliteSidecars(fromDbPath, toDbPath) {
+  for (const suffix of ["-wal", "-shm"]) {
+    const from = `${fromDbPath}${suffix}`;
+    const to = `${toDbPath}${suffix}`;
+    if (!fs.existsSync(from)) continue;
+    if (fs.existsSync(to)) {
+      fs.rmSync(from, { force: true });
+      continue;
+    }
+    fs.renameSync(from, to);
+  }
+}
+
+/**
+ * Move legacy `<data>/blueprints/<id>.<mode>.sqlite` (+ WAL sidecars) to
+ * `<data>/<id>/<mode>/db.sqlite` when the new path is missing.
+ * @returns {string} Resolved main db path (new layout).
+ */
+export function ensureMainDbPath(id, mode, dataDir) {
+  const dbPath = getMainDbPath(id, mode, dataDir);
+  if (fs.existsSync(dbPath)) {
+    return dbPath;
+  }
+
+  const legacyPath = getLegacyMainDbPath(id, mode, dataDir);
+  if (!fs.existsSync(legacyPath)) {
+    return dbPath;
+  }
+
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  fs.renameSync(legacyPath, dbPath);
+  moveSqliteSidecars(legacyPath, dbPath);
+
+  const legacyDir = path.dirname(legacyPath);
+  try {
+    if (fs.existsSync(legacyDir) && fs.readdirSync(legacyDir).length === 0) {
+      fs.rmdirSync(legacyDir);
+    }
+  } catch {
+    // Best-effort cleanup of empty legacy blueprints/ directory.
+  }
+
+  return dbPath;
 }
 
 function readSchemaSnapshot(db) {
@@ -220,7 +269,7 @@ export function syncBlueprint({ filePath, dev = false, dataDir }) {
   const parsed = parseBlueprintFile(filePath);
   const mode = getMode(dev);
   const resolvedDataDir = resolveDataDir(dataDir);
-  const dbPath = getMainDbPath(parsed.id, mode, resolvedDataDir);
+  const dbPath = ensureMainDbPath(parsed.id, mode, resolvedDataDir);
 
   const statements = [];
   for (const block of parsed.sqlBlocks) {
@@ -438,7 +487,7 @@ export function runBlueprintSql({ fileOrId, statement, dev = false, dataDir }) {
   const { id, filePath } = resolved;
   const mode = getMode(dev);
   const resolvedDataDir = resolveDataDir(dataDir);
-  const dbPath = getMainDbPath(id, mode, resolvedDataDir);
+  const dbPath = ensureMainDbPath(id, mode, resolvedDataDir);
 
   let syncChanged = false;
   if (filePath) {
@@ -467,7 +516,7 @@ export function runBlueprintSql({ fileOrId, statement, dev = false, dataDir }) {
 }
 
 /**
- * Execute a single validated read-only SQL query against `<id>.<mode>.sqlite`.
+ * Execute a single validated read-only SQL query against `<data>/<id>/<mode>/db.sqlite`.
  * @param {{ dbPath: string, sql: string, params?: unknown }} options
  * @returns {Array<Record<string, unknown>>}
  */
